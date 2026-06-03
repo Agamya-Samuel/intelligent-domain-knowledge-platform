@@ -1,4 +1,4 @@
-"""Fine-tuning API endpoints — trigger, status, and history of QLoRA jobs.
+"""Fine-tuning API endpoints — trigger, status, history, cost estimation, and training data.
 
 POST /api/fine-tune follows the validation flow from TRD §6.4:
   1. Validate auth
@@ -6,6 +6,10 @@ POST /api/fine-tune follows the validation flow from TRD §6.4:
   3. Budget check: total_spend + est_cost <= $30?
   4. Check queue: any running job? → Enqueue or start immediately
   5. Response: 202 {job_id, status, queue_position, estimated_cost}
+
+GET  /api/fine-tune/estimate — pre-flight cost estimation for the UI preview.
+GET  /api/fine-tune/training-data/preview — preview instruction-tuning samples.
+POST /api/fine-tune/training-data/export — full export as JSON for S3 upload.
 """
 
 import logging
@@ -25,7 +29,17 @@ from app.schemas.fine_tuning import (
     FineTuneHistoryResponse,
     FineTuneStatusResponse,
 )
+from app.schemas.training_data import (
+    CostEstimateResponse,
+    TrainingDataExportResponse,
+    TrainingDataPreviewResponse,
+    TrainingSampleResponse,
+)
 from app.services.budget_service import get_monthly_spend
+from app.services.training_data_service import (
+    estimate_training_cost,
+    prepare_training_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,4 +201,107 @@ async def list_fine_tune_history(
     jobs = result.scalars().all()
     return FineTuneHistoryResponse(
         jobs=[FineTuneStatusResponse.model_validate(j) for j in jobs]
+    )
+
+
+# ── Cost Estimation ──────────────────────────────────────────────────────
+
+
+@router.get(
+    "/estimate",
+    response_model=CostEstimateResponse,
+    summary="Estimate fine-tuning cost (pre-flight check)",
+)
+async def estimate_cost(
+    model_id: str = Query(..., description="Model catalog ID"),
+    dataset_id: str = Query(..., description="Dataset UUID"),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CostEstimateResponse:
+    """
+    Return an estimated cost, time, and budget check without triggering a job.
+
+    Used by the frontend cost-preview step before the user confirms the fine-tune.
+    """
+    try:
+        result = await estimate_training_cost(model_id, dataset_id, db)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    return CostEstimateResponse(**result)
+
+
+# ── Training Data Preview / Export ─────────────────────────────────────────
+
+
+@router.get(
+    "/training-data/preview",
+    response_model=TrainingDataPreviewResponse,
+    summary="Preview instruction-tuning samples",
+)
+async def preview_training_data(
+    dataset_id: str = Query(..., description="Dataset UUID"),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TrainingDataPreviewResponse:
+    """
+    Generate a preview of the instruction-tuning dataset.
+
+    Returns metadata counts and the first 10 samples so the user can
+    verify data quality before triggering a fine-tune.
+    """
+    try:
+        data = await prepare_training_data(db, dataset_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+
+    preview = data["samples"][:10]
+    return TrainingDataPreviewResponse(
+        dataset_id=data["dataset_id"],
+        dataset_version=data["dataset_version"],
+        total_samples=data["total_samples"],
+        domain_samples=data["domain_samples"],
+        general_samples=data["general_samples"],
+        by_type=data["by_type"],
+        preview_samples=[TrainingSampleResponse(**s) for s in preview],
+    )
+
+
+@router.post(
+    "/training-data/export",
+    response_model=TrainingDataExportResponse,
+    summary="Export full instruction-tuning dataset",
+)
+async def export_training_data(
+    dataset_id: str = Query(..., description="Dataset UUID"),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TrainingDataExportResponse:
+    """
+    Generate and return the full instruction-tuning dataset for S3 upload.
+
+    The response body contains all samples in the training format expected
+    by the QLoRA training pipeline.
+    """
+    try:
+        data = await prepare_training_data(db, dataset_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+
+    return TrainingDataExportResponse(
+        dataset_id=data["dataset_id"],
+        dataset_version=data["dataset_version"],
+        total_samples=data["total_samples"],
+        domain_samples=data["domain_samples"],
+        general_samples=data["general_samples"],
+        by_type=data["by_type"],
+        samples=[TrainingSampleResponse(**s) for s in data["samples"]],
     )
