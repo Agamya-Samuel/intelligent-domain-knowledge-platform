@@ -1,0 +1,83 @@
+# ============================
+# Environment & Secrets
+# ============================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ============================
+# Python / Backend
+# ============================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+mypy_cache/
+ruff_cache/
+
+# ============================
+# Node / Frontend
+# ============================
+node_modules/
+.next/
+out/
+.turbo/
+.vercel
+*.tsbuildinfo
+.eslintcache
+frontend/.env
+frontend/.env.local
+
+# ============================
+# Docker
+# ============================
+docker-compose.override.yml
+
+# ============================
+# IDE & Editor
+# ============================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================
+# Logs & Temp
+# ============================
+*.log
+logs/
+tmp/
+temp/
+
+# ============================
+# Modal
+# ============================
+.modal/
