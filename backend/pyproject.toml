@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "idkp-backend"
 version = "0.1.0"
@@ -14,6 +18,10 @@ dependencies = [
     "redis>=5.2.0",
     "python-jose[cryptography]>=3.3.0",
     "httpx>=0.28.0",
+    # Document ingestion
+    "pypdf>=5.1.0",
+    "python-docx>=1.1.0",
+    "python-multipart>=0.0.18",
 ]
 
 [project.optional-dependencies]
