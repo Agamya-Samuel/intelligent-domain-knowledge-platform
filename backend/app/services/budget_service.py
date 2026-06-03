@@ -26,6 +26,44 @@ async def get_monthly_spend(db: AsyncSession) -> Decimal:
     return result.scalar_one()
 
 
+async def record_spend(
+    db: AsyncSession,
+    job_id: str,
+    cost: float,
+    *,
+    status: str = "completed",
+) -> None:
+    """
+    Record a fine-tuning job's cost in the budget_tracking table.
+
+    Called after a job completes (or fails with partial cost).
+    If a record already exists for this job, it is updated.
+    """
+    from sqlalchemy import select as sa_select, update as sa_update
+
+    existing_result = await db.execute(
+        sa_select(BudgetTracking).where(BudgetTracking.job_id == job_id)
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    if existing:
+        await db.execute(
+            sa_update(BudgetTracking)
+            .where(BudgetTracking.job_id == job_id)
+            .values(cost=Decimal(str(cost)), status=status)
+        )
+    else:
+        entry = BudgetTracking(
+            job_id=job_id,
+            cost=Decimal(str(cost)),
+            status=status,
+        )
+        db.add(entry)
+
+    await db.flush()
+    logger.info("Recorded spend: job=%s cost=$%.4f status=%s", job_id, cost, status)
+
+
 async def get_budget_summary(db: AsyncSession) -> dict:
     """
     Build the budget summary for the current month.
