@@ -4,10 +4,11 @@ Chat service — orchestrates the full RAG chat pipeline.
 Flow:
     1. Create/resume a chat session
     2. Store user message
-    3. Retrieve relevant chunks via RAG retriever
-    4. Build RAG prompt from retrieved context
+    3. Retrieve relevant chunks via advanced RAG pipeline
+    4. Assemble verified context (relevance gate + compression)
     5. Stream LLM generation as SSE events
-    6. Store assistant message with citations
+    6. Extract post-generation citations
+    7. Store assistant message with citations
 """
 
 from __future__ import annotations
@@ -23,8 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import generate_uuid
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
+from app.services.rag.citation_extractor import extract_citations as extract_post_citations
+from app.services.rag.context_assembler import SYSTEM_PROMPT, assemble_context
 from app.services.rag.llm_client import generate_stream
-from app.services.rag.prompt_builder import build_rag_prompt, extract_citations
 from app.services.rag.retriever import retrieve
 
 logger = logging.getLogger(__name__)
@@ -207,21 +209,36 @@ async def stream_chat(
             section=section,
         )
 
-        # Step 4: Send citation events
-        citations = extract_citations(retrieval)
-        for citation in citations:
+        # Step 4: Assemble verified context (relevance gate + compression)
+        assembled = await assemble_context(retrieval)
+
+        # Step 5: Send pre-retrieval citation events (source references)
+        pre_citations: list[dict] = []
+        for result in assembled.results:
+            pre_citations.append({
+                "source": result.metadata.get("source_file", "Unknown"),
+                "page": result.metadata.get("page_number"),
+            })
+        for citation in pre_citations:
             yield ("citation", citation)
 
-        # Step 5: Build RAG prompt
-        prompt = build_rag_prompt(retrieval)
-
-        # Step 6: Stream LLM response
+        # Step 6: Stream LLM response with assembled prompt
         full_response = ""
-        async for token in generate_stream(prompt, system_prompt=None):
+        async for token in generate_stream(
+            assembled.prompt,
+            system_prompt=SYSTEM_PROMPT,
+        ):
             full_response += token
             yield ("token", {"content": token, "citations": None})
 
-        # Step 7: Calculate latency and store assistant message
+        # Step 7: Post-generation citation extraction
+        post_citation_result = extract_post_citations(full_response, retrieval)
+        post_citation_dicts = [c.to_dict() for c in post_citation_result.citations]
+
+        # Use post-gen citations if available, else fall back to pre-retrieval
+        final_citations = post_citation_dicts if post_citation_dicts else pre_citations
+
+        # Step 8: Calculate latency and store assistant message
         latency_ms = int((time.monotonic() - start_time) * 1000)
         token_count = len(full_response) // 4  # approximate
 
@@ -230,19 +247,20 @@ async def stream_chat(
             session_id=effective_session_id,
             role="assistant",
             content=full_response,
-            citations=citations if citations else None,
+            citations=final_citations if final_citations else None,
             latency_ms=latency_ms,
             token_count=token_count,
         )
         await db.flush()
 
-        # Step 8: Send done event
+        # Step 9: Send done event
         yield (
             "done",
             {
                 "latency_ms": latency_ms,
                 "model_variant": model_variant,
-                "citations_count": len(citations),
+                "citations_count": len(final_citations),
+                "citation_accuracy": post_citation_result.accuracy,
                 "message_id": message_id,
                 "session_id": effective_session_id,
             },

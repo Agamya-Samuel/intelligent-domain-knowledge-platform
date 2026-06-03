@@ -135,6 +135,7 @@ class SSEDoneEvent(BaseModel):
     latency_ms: int
     model_variant: str
     citations_count: int
+    citation_accuracy: float | None = None
     message_id: str
     session_id: str
 
