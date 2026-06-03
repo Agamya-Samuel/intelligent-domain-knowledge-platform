@@ -4,10 +4,10 @@
 
 ---
 
-> **Document Version:** 1.2   
-> **Date:** June 3, 2026      
-> **Status:** Draft — Awaiting Stakeholder Approval   
-> **Prepared By:** Project Initiation Team      
+> **Document Version:** 1.3
+> **Date:** June 3, 2026
+> **Status:** Draft — Awaiting Stakeholder Approval
+> **Prepared By:** Project Initiation Team
 > **Classification:** Internal / Confidential   
 
 ---
@@ -92,14 +92,26 @@ The proposed solution is a two-layer architecture that separates **what the mode
 │                  LAYER 2 — ADVANCED RAG PIPELINE                │
 │                                                                 │
 │  Ingestion ─► Chunking ─► Embedding ─► Vector DB                │
+│        (S3-triggered)                  (Qdrant)                       │
 │                                                                 │
 │  Query ─► Query Expansion ─► Hybrid Retrieval ─► Reranking      │
-│                           (BM25 + Dense)     (Cross-encoder)    │
+│           (HyDE + multi-query)    (BM25 + Dense)     (Cross-encoder)   │
 │                                                                 │
 │  Metadata Filter ─► Citation Extraction ─► Context Assembly     │
 │                                                                 │
 │  cadence: near-real-time on document change                     │
 └─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │
+                ┌─────────────┴──────────────┐
+                │  LAYER 3 — COMPARISON     │
+                │  (API + UI + Auto-eval)  │
+                │                           │
+                │  POST /api/compare       │
+                │  Toggle: Base ↔ FT       │
+                │  Weekly diff reports     │
+                │  Stored in S3           │
+                └───────────────────────────┘
 ```
 
 **Why this split works:**
@@ -125,10 +137,14 @@ The proposed solution is a two-layer architecture that separates **what the mode
 | **Document processing** | MarkItDown (Microsoft) + Tree-sitter | Unified conversion for 10+ formats (PDF, DOCX, PPTX, XLSX, HTML, Images/OCR, Audio, EPub, CSV/JSON/XML); Tree-sitter retained for deep code parsing |
 | **GPU compute (fine-tuning)** | Modal.com (serverless A10G / L40S / A100-80GB) | Pay-per-second billing; scale-to-zero; GPU tier matched to model tier; $30 free tier sufficient for development |
 | **GPU compute (inference)** | Modal.com (serverless A10G, full scale-to-zero) | Full scale-to-zero at < 100 queries/day; cold start ~30s acceptable; ~$2-5/month inference cost |
-| **LLM serving** | vLLM | High-throughput, low-latency open-source inference server |
-| **Evaluation** | RAGAS + custom domain benchmark | RAG Triad + domain-specific Q&A + cost/latency benchmarks |
-| **Monitoring** | OpenTelemetry + Langfuse | OSS tracing and observability |
-| **Chat UI** | Chainlit or Open WebUI | Production-ready OSS chatbot interfaces |
+| **LLM serving** | vLLM (on Modal.com) | High-throughput, low-latency open-source inference server; LoRA hot-swap for model comparison |
+| **Model comparison API** | vLLM LoRA hot-swap + `/api/compare` endpoint | Enables stakeholders to compare base vs. fine-tuned model; single vLLM instance serves both variants via LoRA adapter hot-loading |
+| **Model selection UI** | Chainlit custom page + budget tracking API | Authenticated users can browse available models and trigger fine-tuning within $30 budget; hard block prevents overspend |
+| **Budget tracking service** | PostgreSQL `budget_tracking` table + API | Tracks cumulative spend; hard block at $30; queue-based single-job execution |
+| **Object storage** | AWS S3 (self-provisioned bucket) | Raw documents (source), converted Markdown output, fine-tuning checkpoints, evaluation datasets; S3 event notifications trigger ingestion |
+| **Evaluation** | RAGAS + custom domain benchmark | RAG Triad + domain-specific Q&A + cost/latency benchmarks + automated comparative evaluation (base vs. fine-tuned) |
+| **Monitoring** | OpenTelemetry + Langfuse | OSS tracing and observability; diff reports visible in dashboard |
+| **Chat UI** | Chainlit or Open WebUI | Production-ready OSS chatbot interfaces; model toggle switch for stakeholders; model selection page for authenticated users |
 
 ---
 
@@ -164,11 +180,12 @@ The same backend serves three stated use cases — public chatbot, internal comp
 | GPU compute — embeddings (Modal.com T4, on-demand) | — | ~$0.5–$1 (on ingestion events only) |
 | GPU compute — storage (Modal Volume, ~7–15 GB) | — | ~$0.63–$1.35 (persistent model + adapter storage) |
 | **Total Modal.com GPU spend** | — | **~$3–$7/month (well within $30 free credits)** |
+| AWS S3 storage (raw docs, converted output, checkpoints, eval) | Setup effort | ~$1–$2/month (50–100 GB) |
 | Vector database hosting (Qdrant self-hosted) | Setup effort | ~$50–$200 (storage + ops) |
 | Engineering (ML + Backend + DevOps) | ~3–4 FTE × 12 weeks | ~0.5–1 FTE ongoing |
 | Evaluation and QA dataset creation | ~2–4 weeks of effort | Periodic |
 
-> **Note:** At < 100 queries/day with full scale-to-zero, inference costs are negligible (~$2–5/month). The $30/month free credits are sufficient for all GPU compute (fine-tuning + inference + embeddings + storage) with significant headroom for iterative model development. Remaining ~$23–27/month is allocated to fine-tuning runs, enabling 5–12 runs/month at Tier 1 (14B) on A10G.
+> **Note:** At < 100 queries/day with full scale-to-zero, inference costs are negligible (~$2–5/month). The $30/month free credits are sufficient for all GPU compute (fine-tuning + inference + embeddings + storage) with significant headroom for iterative model development. AWS S3 adds ~$1–2/month for 50–100 GB of document storage (raw + converted + checkpoints + eval). Remaining ~$23–$27/month headroom is allocated to fine-tuning runs, enabling 5–12 runs/month at Tier 1 (14B) on A10G.
 
 ### 1.5.2 Cost of Inaction
 
@@ -201,6 +218,8 @@ The same backend serves three stated use cases — public chatbot, internal comp
 | Model drift after domain corpus changes significantly | Low | High | Set up automated RAGAS evaluation; schedule re-tune trigger on drift threshold |
 | Selected model tier too large for $30 budget, limiting iteration cycles | Medium | Medium | Start at Tier 1 (14B); Phase 2 Evaluation Gate includes cost/latency analysis; downgrade path to Tier 0 is low-cost and fast |
 | MoE models (Llama 4 Scout, Qwen 3.5 MoE) entice but require multi-GPU | Low | Low | Explicitly excluded from v1 model candidates; defer to v2 if budget increases |
+| S3 storage costs grow unexpectedly with large document uploads | Medium | Low | S3 lifecycle policies to transition older docs to Glacier; upload size limits; cost alerts at 50% ($15) usage |
+| Budget overrun from multiple users triggering fine-tuning simultaneously | Medium | Medium | Hard block at $30 via budget tracking API; queue-based single-job execution; pre-flight cost check before triggering any job |
 
 ---
 
@@ -235,7 +254,7 @@ The investment is justified by the productivity gains, elimination of proprietar
 
 The IDKP project delivers a **production-grade, open-source AI question-answering system** that draws on a continuously updated private knowledge corpus. The platform serves three deployment targets simultaneously: a public-facing chatbot, an internal company tool, and a programmatic agent interface.
 
-Document ingestion is unified through **MarkItDown** (Microsoft), supporting 10+ file formats (PDF, DOCX, PPTX, XLSX, HTML, Images with OCR, EPub, Audio, CSV/JSON/XML, and code repositories) via a single conversion interface that outputs LLM-optimized Markdown. GPU compute for fine-tuning and inference is provided by **Modal.com** serverless infrastructure, enabling pay-per-second billing with scale-to-zero capabilities and eliminating GPU procurement delays.
+Document ingestion is unified through **MarkItDown** (Microsoft), supporting 10+ file formats (PDF, DOCX, PPTX, XLSX, HTML, Images with OCR, EPub, Audio, CSV/JSON/XML, and code repositories) via a single conversion interface that outputs LLM-optimized Markdown. GPU compute for fine-tuning and inference is provided by **Modal.com** serverless infrastructure, enabling pay-per-second billing with scale-to-zero capabilities and eliminating GPU procurement delays. Raw documents and converted output are stored in **AWS S3** with event-driven ingestion (S3 notifications trigger the MarkItDown conversion pipeline), ensuring near-real-time updates as documents change. Stakeholders can compare base vs. fine-tuned model responses via a toggle switch in the chat UI, and any authenticated user can browse available models and trigger fine-tuning jobs within the $30/month budget (hard block prevents overspend).
 
 The system uses a two-layer architecture:
 
@@ -250,6 +269,7 @@ The system uses a two-layer architecture:
 | # | Objective | Measurable Success Criterion |
 |---|---|---|
 | O-01a | Model selection completed via structured benchmark | Phase 2 Evaluation Gate: ≥ 2 candidate models benchmarked across RAGAS triad, domain-specific Q&A, and cost/latency; winner selected with documented rationale |
+| O-01b | Model comparison accessible to stakeholders | Model comparison UI deployed with toggle switch and diff view; automated weekly comparative evaluation generating delta reports stored in S3; stakeholders can validate quality improvements before sign-off |
 | O-01 | Domain-adapted LLM deployed | Fine-tuned model outperforms base model by ≥ 15% on domain eval benchmark |
 | O-02 | Real-time document ingestion pipeline operational | New/updated documents indexed within ≤ 5 minutes of change |
 | O-03 | Advanced RAG pipeline deployed with hybrid retrieval and reranking | Retrieval Precision@5 ≥ 85% on held-out evaluation set |
@@ -257,6 +277,7 @@ The system uses a two-layer architecture:
 | O-05 | Public chatbot live | P95 response latency ≤ 3 seconds |
 | O-06 | Internal API and agent interface deployed | REST API with OpenAPI spec; agent tool wrapper documented |
 | O-07 | Evaluation and monitoring in production | RAGAS metrics tracked; alerts on faithfulness drop below 0.85 |
+| O-08 | Model selection UI with budget awareness | Authenticated users can browse 4-tier model catalog and trigger fine-tuning jobs; budget tracking API prevents overspend; hard block at $30 monthly limit |
 
 ---
 
@@ -272,6 +293,8 @@ The system uses a two-layer architecture:
 - Baseline RAG pipeline (naive retrieval) with evaluation scaffold (RAGAS)
 - Ground-truth evaluation dataset (minimum 200 Q&A pairs) curated from document corpus
 - **Modal.com** account provisioned; SDK integrated; initial model download to Modal Volume
+- **AWS S3 bucket provisioned** (`idkp-documents-{env}`); IAM roles configured; event-driven ingestion wired (SNS → SQS → Modal worker) for `raw/` prefix notifications
+- Model catalog API (`/api/models`) and budget tracking infrastructure (PostgreSQL `budget_tracking` table) implemented; budget tracking service integrated with Modal; hard block at $30 enforced
 
 ### Phase 2 — Fine-tuning (Weeks 5–7)
 
@@ -294,8 +317,9 @@ The system uses a two-layer architecture:
 ### Phase 4 — Integration & Testing (Weeks 10–11)
 
 - Fine-tuned LLM + Advanced RAG pipeline integrated end-to-end on Modal serverless infrastructure
-- Public chatbot interface deployed (Chainlit or Open WebUI)
-- Internal REST API documented and tested (OpenAPI spec)
+- Public chatbot interface deployed (Chainlit or Open WebUI) with model comparison UI (toggle switch: Base ↔ Fine-tuned; diff panel for stakeholders)
+- Internal REST API documented and tested (OpenAPI spec); includes model comparison endpoint `/api/compare` and session state endpoint `/api/session/model-variant`
+- Model selection UI deployed: authenticated users can browse 4-tier model catalog; trigger fine-tuning jobs with budget confirmation
 - Agent tool wrapper implemented (LangChain/LlamaIndex tool interface)
 - Load testing: simulate 100 concurrent users; validate latency SLA (including cold-start scenarios)
 - Security review: input sanitisation, rate limiting, prompt injection hardening
@@ -303,12 +327,13 @@ The system uses a two-layer architecture:
 ### Phase 5 — Deployment & Monitoring (Week 12)
 
 - Production infrastructure provisioned on Modal.com (serverless inference, embedding functions, ingestion workers; full scale-to-zero — no keep-warm for v1)
-- CI/CD pipeline for document ingestion (trigger on file change / DB event)
-- Automated re-indexing on document update via MarkItDown conversion pipeline
+- CI/CD pipeline for document ingestion (trigger on S3 event notification on `raw/` prefix)
+- Automated re-indexing on document update via MarkItDown conversion pipeline; converted output stored to S3 `converted/` prefix
+- AWS S3 lifecycle policies configured (transition old docs to Glacier after 90 days; delete after 365 days); bucket versioning enabled
 - OpenTelemetry tracing + Langfuse dashboard live (including Modal function metrics)
-- Automated RAGAS regression testing on weekly eval batch
+- Automated RAGAS regression testing on weekly eval batch; comparative evaluation (base vs. fine-tuned) reports stored in S3 `eval/comparisons/` prefix
 - Runbooks: Modal deployment, reindexing, model re-tune trigger, rollback procedures
-- Modal cost monitoring dashboard with budget alerts (80% of $30 threshold = $24)
+- Modal cost monitoring dashboard with budget alerts (80% of $30 threshold = $24); S3 cost alerts at 50% usage ($15)
 - Stakeholder handover and demo
 
 ---
@@ -338,12 +363,14 @@ The system uses a two-layer architecture:
 | Inference GPU | Modal.com A10G (full scale-to-zero) | ~$1.10/hr active; $0 idle |
 | Embedding GPU | Modal.com T4 (16 GB VRAM) | ~$0.59/hr, on-demand for ingestion |
 | Persistent storage | Modal Volume | $0.09/GB/month (~7–15 GB for model + adapter) |
+| Model pre-download (cold start optimization) | S3 → Modal Volume sync function | ~$0.5–1/month on Modal T4 (per cold start) |
 | SDK | Modal Python SDK | MIT |
 
 ### Retrieval & Storage
 
 | Component | Technology | License |
 |---|---|---|
+| Object storage | AWS S3 (self-provisioned bucket) | AWS (infrastructure, not software) |
 | Vector database | Qdrant (self-hosted) | Apache 2.0 |
 | Sparse retrieval | BM25s or Elasticsearch OSS | Apache 2.0 |
 | Hybrid fusion | Reciprocal Rank Fusion (RRF) | Algorithm (no license) |
@@ -474,8 +501,8 @@ Document conversion is unified through **MarkItDown** (Microsoft), providing a s
 - Ingestion of **YouTube URLs** (video transcript extraction)
 - Ingestion of **code repositories** (Python, JavaScript, and generic text-based formats; parsed with **Tree-sitter** for deep AST-level analysis beyond MarkItDown's text-level conversion)
 - **Markdown Normalization Layer**: post-processing step for metadata extraction (source file, document type, creation/update timestamp, page numbers, section headers) from MarkItDown's unified output
-- **Real-time/near-real-time update mechanism**: event-driven re-ingestion triggered by file system watch, webhook, or database change event; target latency ≤ 5 minutes end-to-end
-- Document deduplication and version tracking (new version replaces old vectors for the same document ID)
+- **Real-time/near-real-time update mechanism**: event-driven re-ingestion triggered by S3 Event Notification on `s3:ObjectCreated:*` in AWS S3 bucket `raw/` prefix (SNS → SQS → Modal ingestion worker); alternatively, file system watch, webhook, or database change event; target latency ≤ 5 minutes end-to-end
+- Document deduplication and version tracking (new version replaces old vectors for the same document ID; old versions retained in S3 via bucket versioning for audit trail)
 
 ### 3.2.2 Fine-tuning Pipeline
 
@@ -487,7 +514,8 @@ Document conversion is unified through **MarkItDown** (Microsoft), providing a s
 - **QLoRA fine-tuning** using PEFT + Unsloth on curated domain instruction-tuning dataset, executed on **Modal.com** serverless GPU infrastructure (GPU tier matched to selected model)
 - Fine-tuning dataset construction from: domain Q&A pairs, document summaries, multi-document reasoning examples, citation-format examples, plus ~5–10% general-domain examples to prevent catastrophic forgetting
 - LoRA adapter training, checkpointing, and evaluation via Modal Functions with explicit GPU type selection (`gpu="A10G"`, `gpu="L40S"`, or `gpu="A100-80GB"` as appropriate)
-- **Modal Volume** persistence: base model and LoRA adapter stored on persistent volume to avoid re-download on cold starts
+- **Modal Volume** persistence: base model and final LoRA adapter stored on persistent volume to avoid re-download on cold starts
+- **S3 checkpoint storage**: intermediate fine-tuning checkpoints stored to AWS S3 (`s3://idkp-documents-{env}/checkpoints/{job_id}/`) for durability and recovery; final LoRA adapter promoted to Modal Volume for serving
 - Function timeouts enforced (`timeout=600`) to prevent runaway costs from bugs
 - Domain benchmark evaluation report comparing fine-tuned vs base model
 - Adapter merging and serving setup via vLLM on Modal with LoRA hot-loading support
@@ -514,6 +542,25 @@ The IDKP supports a tiered model selection strategy, allowing the team to choose
 | Tier 2 | Qwen 2.5 32B-Instruct | Apache 2.0 | Near-70B quality at half the VRAM cost |
 | Tier 3 | Qwen 2.5 72B-Instruct | Apache 2.0 | Maximum quality; limited to 1 FT run/month on $30 |
 
+### 3.2.2b Model Comparison (API + UI + Automated Evaluation)
+
+All components for comparing the base (un-fine-tuned) model with the fine-tuned model are in scope:
+
+**Backend:**
+- **Model comparison API (`POST /api/compare`)**: Accepts a query and routes it to both the base model (no LoRA adapter) and the fine-tuned model (LoRA adapter loaded) on the same vLLM instance using LoRA hot-swap. Returns both responses with latency metrics and citation diffs
+- **Session state endpoint (`POST /api/session/model-variant`)**: Sets the active model variant (`base` or `finetuned`) for a user session; stored in PostgreSQL session table
+- **vLLM LoRA hot-swapping**: Single vLLM instance serves both model variants by dynamically loading/unloading the LoRA adapter per request; no need for two separate deployments
+
+**Frontend (Chainlit):**
+- **Model toggle switch**: Toggle widget in the chat UI header — "Base Model" ↔ "Fine-tuned Model". Default: Fine-tuned (when available); falls back to Base if no fine-tuning has been done. On toggle, new queries use the selected variant
+- **Color-coded badge**: Visual indicator showing which variant is currently active (e.g., green = fine-tuned, grey = base)
+
+**Automated Comparative Evaluation:**
+- Weekly regression eval runs against **both** base and fine-tuned models on the same held-out Q&A set
+- Generates diff report per query: faithfulness delta, latency delta, citation accuracy delta
+- Reports stored in S3 (`s3://idkp-documents-{env}/eval/comparisons/YYYY-MM-DD-diff.json`)
+- Diff reports visible in Langfuse dashboard and model comparison UI
+
 ### 3.2.3 Advanced RAG Pipeline
 
 The following advanced RAG components are all in scope:
@@ -537,6 +584,39 @@ All three deployment targets are in scope:
 - **Public chatbot** (primary): Chainlit or Open WebUI-based web interface; accessible via browser; authenticated access
 - **Internal company tool**: Same backend; role-based access control (RBAC) layer; internal network deployment
 - **Agent system interface**: REST API with OpenAPI 3.1 specification; LangChain and LlamaIndex tool wrappers; supports multi-turn conversation state
+
+### 3.2.4b Model Selection UI
+
+Any authenticated user can browse available models across all four tiers and trigger fine-tuning jobs, subject to the $30 monthly hard budget limit. This feature includes a backend budget tracking service, a fine-tuning job queue, and a Chainlit-based model catalog page.
+
+**API Endpoints:**
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/models` | GET | Returns all available models across Tier 0–3 with metadata (id, tier, name, size, license, estimated_cost_per_run, estimated_training_time, vram_required, quality_rating, gpu_required) |
+| `/api/fine-tune` | POST | Triggers a fine-tuning job for a selected model; validates authentication and budget before enqueuing |
+| `/api/budget` | GET | Returns current spend, remaining budget, and estimated runs left at current spend rate |
+| `/api/fine-tune/status/:job_id` | GET | Returns job status (queued, training, completed, failed) and queue position |
+
+**Budget Tracking Service:**
+- PostgreSQL table `budget_tracking` with columns: `id`, `job_id`, `model`, `cost`, `timestamp`, `status`
+- Total spend calculated as `SUM(cost WHERE status IN ('completed', 'running'))`
+- Hard block logic: if `total_spend + estimated_cost > $30`, the fine-tuning request is rejected with HTTP 403 and a message showing remaining budget
+- Budget recalculated on every API call (no caching) to prevent stale-data overruns
+
+**Fine-tuning Queue:**
+- Only one fine-tuning job can run at a time (single GPU constraint on Modal.com free tier)
+- Queue stored in PostgreSQL with FIFO ordering
+- Users can view queue position via the status endpoint; queued jobs automatically start when the running job completes
+
+**Frontend (Chainlit Model Selection Page):**
+- Accessible via sidebar navigation; displays a grid of model cards organized by tier
+- Each card shows: model name, size, license badge, estimated cost per run, estimated training time, GPU required, and a "Select & Fine-tune" button
+- Budget indicator at top of page: "Remaining: $XX.XX of $30.00 (~N runs left)"
+- Confirmation modal before triggering: displays model details, estimated cost, new remaining budget after the run, and Confirm/Cancel buttons
+- Status page after confirmation: shows job progress (queued → training → completed)
+- Budget exceeded state: model cards disabled with "Insufficient budget remaining" message
+- Active model indicator in sidebar: shows currently active fine-tuned model with link back to model selection page
 
 ### 3.2.5 Evaluation, Monitoring, and Observability
 
@@ -599,6 +679,8 @@ The project plan is built on the following assumptions. If any assumption is fou
 | A-11 | At < 100 queries/day, a ~30-second cold-start latency is acceptable for all three deployment targets. Full scale-to-zero is the default inference strategy for v1; keep-warm can be added in a future phase if latency requirements tighten |
 | A-12 | The fine-tuning dataset includes domain-agnostic examples (~5–10%) to prevent catastrophic forgetting, given the platform's universal multi-domain scope |
 | A-13 | Phase 2 Model Evaluation Gate requires ~2–3 hours of GPU time on Modal.com for benchmarking multiple candidate models. This is factored into the $30 monthly budget |
+| A-14 | **AWS account** with S3 access is available. An S3 bucket (`idkp-documents-{env}`) with prefixes `raw/`, `converted/`, `checkpoints/`, `eval/comparisons/`, and `logs/` will be provisioned. S3 costs (~$1–2/month for 50–100 GB) are treated as infrastructure, not GPU compute |
+| A-15 | **Authentication system** exists or will be provisioned for all three deployment targets (public chatbot, internal company tool, agent API). The model selection UI and fine-tuning trigger endpoints require authenticated access to prevent unauthorized budget consumption |
 
 ---
 
@@ -612,7 +694,7 @@ The project plan is built on the following assumptions. If any assumption is fou
 | C-04 | **Mandatory citations** on all factual responses | RAG pipeline must extract and preserve page/section provenance through the full pipeline |
 | C-05 | **Accuracy and Speed are co-equal** | No aggressive context compression that hurts accuracy; no reranking skip that hurts latency; must be benchmarked together |
 | C-06 | **Fine-tuning must not regress general language ability** | Training data must include ~5–10% general-domain examples to prevent catastrophic forgetting |
-| C-07 | **Modal cost governance** — total monthly GPU spend must remain within the $30 free credit allocation. All GPU functions must specify explicit GPU type (`gpu="A10G"`, `gpu="L40S"`, or `gpu="A100-80GB"` as appropriate), timeout (`timeout=600`), and use full scale-to-zero (no keep-warm). Cost monitoring via Modal dashboard with 80% ($24) budget alert threshold. Any model tier upgrade beyond Tier 1 requires documented cost justification in the Phase 2 Model Selection Report | Prevents runaway costs; ensures project stays within zero-cost GPU budget; formal gate for tier upgrades |
+| C-07 | **Modal cost governance** — total monthly GPU spend must remain within the $30 free credit allocation. All GPU functions must specify explicit GPU type (`gpu="A10G"`, `gpu="L40S"`, or `gpu="A100-80GB"` as appropriate), timeout (`timeout=600`), and use full scale-to-zero (no keep-warm). Cost monitoring via Modal dashboard with 80% ($24) budget alert threshold. Any model tier upgrade beyond Tier 1 requires documented cost justification in the Phase 2 Model Selection Report. Fine-tuning jobs are subject to a hard block: if `total_spend + estimated_cost > $30`, the job is rejected (HTTP 403). Only one fine-tuning job runs at a time; additional requests are queued in FIFO order via PostgreSQL. Budget is recalculated on every API call (no caching) | Prevents runaway costs; ensures project stays within zero-cost GPU budget; formal gate for tier upgrades; hard block prevents unauthorized budget overruns from concurrent fine-tuning triggers |
 
 ---
 
@@ -624,6 +706,7 @@ The project plan is built on the following assumptions. If any assumption is fou
 | D-02 | Ground-truth evaluation dataset (≥ 200 Q&A pairs) | 1 | Reviewed and approved by domain expert |
 | D-03 | Baseline RAG evaluation report | 1 | RAGAS metrics established as baseline |
 | D-03a | Model Selection Report (Evaluation Gate) | 2 | ≥ 2 models benchmarked across RAGAS + domain Q&A + cost/latency; winning model selected with documented rationale; signed off by ML Engineer and Product Owner |
+| D-03b | Model Comparison Feature (API + UI + automated eval) | 4 | `POST /api/compare` returns base and fine-tuned responses; Chainlit toggle switch operational; weekly comparative diff report generated and stored in S3; visible in Langfuse dashboard |
 | D-04 | QLoRA fine-tuning run + LoRA adapter (via Modal.com) | 2 | ≥ 15% improvement over base on domain benchmark; adapter persisted to Modal Volume |
 | D-05 | Fine-tuned model domain benchmark report | 2 | Signed off by ML Engineer and Product Owner |
 | D-06 | Advanced RAG pipeline (all 9 components) | 3 | Retrieval Precision@5 ≥ 85%; citations present in ≥ 95% of factual answers |
@@ -634,6 +717,8 @@ The project plan is built on the following assumptions. If any assumption is fou
 | D-11 | Monitoring dashboard (Langfuse + OTel + Modal metrics) | 5 | All defined metrics visible; alert rules active; Modal cost tracking enabled |
 | D-12 | Operator runbooks + architecture documentation | 5 | Reviewed and signed off by DevOps and Product Owner |
 | D-13 | Modal deployment runbook | 5 | GPU function configs (tier-matched), scale-to-zero strategy, cost monitoring ($24 alert threshold), and fallback procedures documented |
+| D-15 | Model Selection UI (catalog + fine-tune trigger + budget tracking) | 4 | `GET /api/models` returns all tier models with metadata; `POST /api/fine-tune` triggers jobs with hard block at $30; Chainlit model selection page with budget indicator deployed; queue-based single-job execution operational |
+| D-16 | AWS S3 bucket provisioning and lifecycle policies | 1 | S3 bucket `idkp-documents-{env}` created with prefixes `raw/`, `converted/`, `checkpoints/`, `eval/comparisons/`, `logs/`; lifecycle policies configured; IAM roles for Modal and ingestion workers |
 
 ---
 
@@ -674,3 +759,4 @@ A deliverable is considered **Done** when:
 > | 1.0 | June 3, 2026 | Project Initiation Team | Integrated MarkItDown (document ingestion) and Modal.com (serverless GPU); expanded ingestion from 4 to 11+ formats; reduced timeline from 14 to 12 weeks; updated cost model |
 > | 1.1 | June 3, 2026 | Project Manager | Approved for execution |
 > | 1.2 | June 3, 2026 | Project Initiation Team | Multi-domain scope (legal, healthcare, finance, tech, internal, education); multi-tier model selection (Tier 0–3: 7B→72B) with Qwen 2.5, Gemma 4, Ministral 3, DeepSeek-R1 distills; revised cost model for $30/month budget with < 100 queries/day full scale-to-zero; added Model Evaluation Gate (§3.2.2a); updated GPU tiers (A10G/L40S/A100-80GB); removed keep-warm schedule; added comprehensive evaluation framework (RAGAS + domain benchmark + cost/latency); MoE models excluded to v2 |
+| 1.3 | June 3, 2026 | Project Initiation Team | AWS S3 storage integration (raw documents, converted output, checkpoints, eval artifacts); base vs. fine-tuned model comparison with toggle switch UI and automated comparative evaluation (§3.2.2b); model selection UI with budget-aware fine-tuning trigger and queue (§3.2.4b); model catalog API (`GET /api/models`, `POST /api/fine-tune`, `GET /api/budget`); hard block at $30 for fine-tuning jobs; S3 event-driven ingestion (SNS → SQS → Modal worker); S3 lifecycle policies and cost alerts; updated constraints (C-07 hard block), assumptions (A-14, A-15), deliverables (D-03b, D-15, D-16) |
