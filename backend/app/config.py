@@ -82,6 +82,19 @@ class Settings(BaseSettings):
     EVAL_MAX_CONCURRENCY: int = 3   # max parallel RAG pipeline calls during eval
     EVAL_TIMEOUT_SECONDS: int = 300 # total timeout for a full evaluation run
 
+    # ── QLoRA Fine-tuning ──────────────────────────────────────────
+    QLORA_RANK: int = 64               # LoRA rank (higher = more capacity)
+    QLORA_ALPHA: int = 128             # LoRA alpha scaling factor
+    QLORA_DROPOUT: float = 0.05        # LoRA dropout rate
+    QLORA_LEARNING_RATE: float = 2e-4  # Initial learning rate
+    QLORA_NUM_EPOCHS: int = 3          # Default training epochs
+    QLORA_BATCH_SIZE: int = 4          # Per-device batch size
+    QLORA_GRAD_ACCUM_STEPS: int = 4    # Gradient accumulation steps
+    QLORA_MAX_SEQ_LENGTH: int = 2048   # Max sequence length for training
+    QLORA_CHECKPOINT_STEPS: int = 50   # Save checkpoint every N steps
+    CHECKPOINT_S3_PREFIX: str = "checkpoints"  # S3 prefix for checkpoints
+    MODAL_VOLUME_NAME: str = "idkp-models"     # Modal Volume for base model persistence
+
 
 settings = Settings()
 
