@@ -154,6 +154,10 @@ async def stream_chat(
     query: str,
     session_id: str | None = None,
     model_variant: str = "base",
+    doc_type: str | None = None,
+    source_id: str | None = None,
+    page: int | None = None,
+    section: str | None = None,
 ) -> AsyncGenerator[tuple[str, dict[str, Any]], None]:
     """
     Execute the full RAG chat pipeline and stream tokens via SSE events.
@@ -194,8 +198,14 @@ async def stream_chat(
         )
         await db.flush()
 
-        # Step 3: Retrieve relevant chunks
-        retrieval = await retrieve(query)
+        # Step 3: Retrieve relevant chunks (with advanced RAG pipeline)
+        retrieval = await retrieve(
+            query,
+            doc_type=doc_type,
+            source_id=source_id,
+            page=page,
+            section=section,
+        )
 
         # Step 4: Send citation events
         citations = extract_citations(retrieval)

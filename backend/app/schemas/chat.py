@@ -24,10 +24,19 @@ class ModelVariant(StrEnum):
 # ── Request Schemas ─────────────────────────────────────────────────
 
 
+class MetadataFilter(BaseModel):
+    """Optional metadata filters for retrieval (TRD §4.3, §6.6)."""
+
+    doc_type: str | None = Field(default=None, description="Filter by document type")
+    source_id: str | None = Field(default=None, description="Filter by source document ID")
+    page: int | None = Field(default=None, ge=1, description="Filter by page number")
+    section: str | None = Field(default=None, description="Filter by section name")
+
+
 class ChatRequest(BaseModel):
     """Request body for the chat endpoint."""
 
-    query: str = Field(..., min_length=1, max_length=2000, description="User question or query")
+    query: str = Field(..., min_length=1, max_length=4096, description="User question or query")
     session_id: str | None = Field(
         default=None,
         description="Existing session ID. If None, a new session is created.",
@@ -35,6 +44,10 @@ class ChatRequest(BaseModel):
     model_variant: ModelVariant = Field(
         default=ModelVariant.BASE,
         description="Which LLM variant to use for generation.",
+    )
+    filters: MetadataFilter | None = Field(
+        default=None,
+        description="Optional metadata filters for retrieval.",
     )
 
 

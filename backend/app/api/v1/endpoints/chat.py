@@ -59,12 +59,18 @@ async def chat_query(
     async def event_generator():
         """Generate SSE events from the RAG pipeline."""
         try:
+            # Extract metadata filters if provided
+            filters = body.filters
             async for event_type, event_data in stream_chat(
                 db,
                 user_id=user.user_id,
                 query=body.query,
                 session_id=body.session_id,
                 model_variant=body.model_variant,
+                doc_type=filters.doc_type if filters else None,
+                source_id=filters.source_id if filters else None,
+                page=filters.page if filters else None,
+                section=filters.section if filters else None,
             ):
                 yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
         except Exception as exc:
