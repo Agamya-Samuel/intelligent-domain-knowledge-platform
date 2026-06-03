@@ -54,5 +54,23 @@ class Settings(BaseSettings):
     UPLOAD_CHUNK_OVERLAP: int = 200
     SUPPORTED_FILE_TYPES: str = ".pdf,.txt,.md,.docx"
 
+    # ── Embedding ─────────────────────────────────────────────────
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    EMBEDDING_DIMENSION: int = 1024
+    EMBEDDING_DEVICE: str = "cpu"  # "cpu" or "cuda"
+
+    # ── RAG Pipeline ──────────────────────────────────────────────
+    QDRANT_COLLECTION: str = "idkp_documents"
+    RAG_TOP_K: int = 5
+    RAG_MIN_SCORE: float = 0.5
+    RAG_MAX_CONTEXT_TOKENS: int = 4096
+
+    # ── LLM Inference (Modal vLLM) ────────────────────────────────
+    LLM_BASE_URL: str = "http://localhost:8001"  # vLLM OpenAI-compatible endpoint
+    LLM_MODEL: str = "Qwen/Qwen2.5-7B-Instruct"
+    LLM_MAX_TOKENS: int = 1024
+    LLM_TEMPERATURE: float = 0.3
+    LLM_STREAM: bool = True
+
 
 settings = Settings()
