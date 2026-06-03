@@ -112,6 +112,16 @@ The proposed solution is a two-layer architecture that separates **what the mode
                 │  Weekly diff reports     │
                 │  Stored in S3           │
                 └───────────────────────────┘
+
+                ┌─────────────┴──────────────┐
+                │  LAYER 4 — DATASET MGMT   │
+                │  (Versioned, No Delete)  │
+                │                           │
+                │  POST /api/datasets      │
+                │  Add sources → version++ │
+                │  FT job links dataset    │
+                │  Stored in S3 datasets/  │
+                └───────────────────────────┘
 ```
 
 **Why this split works:**
@@ -142,6 +152,7 @@ The proposed solution is a two-layer architecture that separates **what the mode
 | **Model selection UI** | Chainlit custom page + budget tracking API | Authenticated users can browse available models and trigger fine-tuning within $30 budget; hard block prevents overspend |
 | **Budget tracking service** | PostgreSQL `budget_tracking` table + API | Tracks cumulative spend; hard block at $30; queue-based single-job execution |
 | **Object storage** | AWS S3 (self-provisioned bucket) | Raw documents (source), converted Markdown output, fine-tuning checkpoints, evaluation datasets; S3 event notifications trigger ingestion |
+| **Dataset management** | PostgreSQL `datasets` tables + S3 dataset storage | Versioned user-created datasets for fine-tuning; no deletion (archive only); mixed-domain support; dataset picker in fine-tuning flow |
 | **Evaluation** | RAGAS + custom domain benchmark | RAG Triad + domain-specific Q&A + cost/latency benchmarks + automated comparative evaluation (base vs. fine-tuned) |
 | **Monitoring** | OpenTelemetry + Langfuse | OSS tracing and observability; diff reports visible in dashboard |
 | **Chat UI** | Chainlit or Open WebUI | Production-ready OSS chatbot interfaces; model toggle switch for stakeholders; model selection page for authenticated users |
@@ -220,6 +231,8 @@ The same backend serves three stated use cases — public chatbot, internal comp
 | MoE models (Llama 4 Scout, Qwen 3.5 MoE) entice but require multi-GPU | Low | Low | Explicitly excluded from v1 model candidates; defer to v2 if budget increases |
 | S3 storage costs grow unexpectedly with large document uploads | Medium | Low | S3 lifecycle policies to transition older docs to Glacier; upload size limits; cost alerts at 50% ($15) usage |
 | Budget overrun from multiple users triggering fine-tuning simultaneously | Medium | Medium | Hard block at $30 via budget tracking API; queue-based single-job execution; pre-flight cost check before triggering any job |
+| Fine-tuned model trained on outdated dataset version (staleness) | Low | High | Model selection UI shows dataset version + last updated date; users can see when their model was last retrained |
+| Users accidentally archive active datasets | Low | Low | Archive confirmation modal warns about consequences; archived data preserved in S3 |
 
 ---
 
@@ -254,7 +267,7 @@ The investment is justified by the productivity gains, elimination of proprietar
 
 The IDKP project delivers a **production-grade, open-source AI question-answering system** that draws on a continuously updated private knowledge corpus. The platform serves three deployment targets simultaneously: a public-facing chatbot, an internal company tool, and a programmatic agent interface.
 
-Document ingestion is unified through **MarkItDown** (Microsoft), supporting 10+ file formats (PDF, DOCX, PPTX, XLSX, HTML, Images with OCR, EPub, Audio, CSV/JSON/XML, and code repositories) via a single conversion interface that outputs LLM-optimized Markdown. GPU compute for fine-tuning and inference is provided by **Modal.com** serverless infrastructure, enabling pay-per-second billing with scale-to-zero capabilities and eliminating GPU procurement delays. Raw documents and converted output are stored in **AWS S3** with event-driven ingestion (S3 notifications trigger the MarkItDown conversion pipeline), ensuring near-real-time updates as documents change. Stakeholders can compare base vs. fine-tuned model responses via a toggle switch in the chat UI, and any authenticated user can browse available models and trigger fine-tuning jobs within the $30/month budget (hard block prevents overspend).
+Document ingestion is unified through **MarkItDown** (Microsoft), supporting 10+ file formats (PDF, DOCX, PPTX, XLSX, HTML, Images with OCR, EPub, Audio, CSV/JSON/XML, and code repositories) via a single conversion interface that outputs LLM-optimized Markdown. GPU compute for fine-tuning and inference is provided by **Modal.com** serverless infrastructure, enabling pay-per-second billing with scale-to-zero capabilities and eliminating GPU procurement delays. Raw documents and converted output are stored in **AWS S3** with event-driven ingestion (S3 notifications trigger the MarkItDown conversion pipeline), ensuring near-real-time updates as documents change. Stakeholders can compare base vs. fine-tuned model responses via a toggle switch in the chat UI, and any authenticated user can browse available models and trigger fine-tuning jobs within the $30/month budget (hard block prevents overspend). Users can create versioned datasets for fine-tuning (mixing sources from multiple domains), and fine-tuned models always reflect the dataset version they were trained on — RAG handles real-time document retrieval independently.
 
 The system uses a two-layer architecture:
 
@@ -278,6 +291,7 @@ The system uses a two-layer architecture:
 | O-06 | Internal API and agent interface deployed | REST API with OpenAPI spec; agent tool wrapper documented |
 | O-07 | Evaluation and monitoring in production | RAGAS metrics tracked; alerts on faithfulness drop below 0.85 |
 | O-08 | Model selection UI with budget awareness | Authenticated users can browse 4-tier model catalog and trigger fine-tuning jobs; budget tracking API prevents overspend; hard block at $30 monthly limit |
+| O-09 | Versioned dataset management for fine-tuning | Users can create versioned datasets by adding sources (upload, S3 select, paste text, URL fetch); mixed-domain allowed; no deletion (archive only); dataset picker in fine-tuning flow; dataset version stored with each fine-tuned model |
 
 ---
 
@@ -295,11 +309,14 @@ The system uses a two-layer architecture:
 - **Modal.com** account provisioned; SDK integrated; initial model download to Modal Volume
 - **AWS S3 bucket provisioned** (`idkp-documents-{env}`); IAM roles configured; event-driven ingestion wired (SNS → SQS → Modal worker) for `raw/` prefix notifications
 - Model catalog API (`/api/models`) and budget tracking infrastructure (PostgreSQL `budget_tracking` table) implemented; budget tracking service integrated with Modal; hard block at $30 enforced
+- Dataset CRUD API implemented (`/api/datasets`, `/api/datasets/{id}/sources`, `/api/datasets/{id}/versions`); S3 dataset storage structure provisioned (`datasets/{dataset_id}/v{version}/`); PostgreSQL `datasets`, `dataset_sources`, `dataset_version_history` tables created; dataset versioning logic and no-deletion enforcement (archive only)
 
 ### Phase 2 — Fine-tuning (Weeks 5–7)
 
 - Model Evaluation Gate: benchmark ≥ 2 candidate models across RAGAS triad, domain-specific Q&A (≥ 50 held-out pairs across all target domains), and cost/latency metrics; select winning model with documented rationale
 - Fine-tuning dataset prepared (instruction-tuning format from domain Q&A pairs and document summaries, including ~5–10% general-domain examples to prevent catastrophic forgetting)
+- Dataset versioning logic implemented (auto-increment on source add; previous versions preserved; fine-tuning job records dataset_version)
+- Dataset source processing pipeline operational (MarkItDown conversion, chunking, S3 upload per version; manifest.json generation)
 - QLoRA training run executed on **Modal.com** (GPU tier matched to selected model: A10G for Tier 0-1, L40S for Tier 2, A100-80GB for Tier 3)
 - LoRA adapter evaluated against baseline; domain benchmark report produced
 - LoRA adapter persisted to Modal Volume for persistent storage across runs
@@ -319,7 +336,8 @@ The system uses a two-layer architecture:
 - Fine-tuned LLM + Advanced RAG pipeline integrated end-to-end on Modal serverless infrastructure
 - Public chatbot interface deployed (Chainlit or Open WebUI) with model comparison UI (toggle switch: Base ↔ Fine-tuned; diff panel for stakeholders)
 - Internal REST API documented and tested (OpenAPI spec); includes model comparison endpoint `/api/compare` and session state endpoint `/api/session/model-variant`
-- Model selection UI deployed: authenticated users can browse 4-tier model catalog; trigger fine-tuning jobs with budget confirmation
+- Model selection UI deployed: authenticated users can browse 4-tier model catalog; trigger fine-tuning jobs with budget confirmation; dataset picker in fine-tuning flow shows dataset name, version, source count, last updated date
+- Dataset management UI deployed: users can create datasets, add sources (upload, S3 select, paste text, URL fetch), view version history, archive datasets; no deletion allowed
 - Agent tool wrapper implemented (LangChain/LlamaIndex tool interface)
 - Load testing: simulate 100 concurrent users; validate latency SLA (including cold-start scenarios)
 - Security review: input sanitisation, rate limiting, prompt injection hardening
@@ -561,6 +579,113 @@ All components for comparing the base (un-fine-tuned) model with the fine-tuned 
 - Reports stored in S3 (`s3://idkp-documents-{env}/eval/comparisons/YYYY-MM-DD-diff.json`)
 - Diff reports visible in Langfuse dashboard and model comparison UI
 
+### 3.2.2c Dataset Management (Versioned, No Deletion, Mixed-Domain)
+
+All components for user-created versioned datasets for fine-tuning are in scope:
+
+**RAG vs. Fine-tuning Boundary:**
+
+| Layer | What it handles | Update mechanism |
+|---|---|---|
+| **RAG (Retrieval)** | Real-time document retrieval, citation extraction, factual accuracy | New documents indexed within ~5 min; retrievable immediately |
+| **Fine-tuning** | Behavioral adaptation, domain tone/style, instruction-following patterns | User-triggered; uses dataset snapshots (versioned); NOT affected by new documents |
+
+**Key principle:** RAG is always current. Fine-tuned models reflect the dataset version they were trained on. The two layers complement each other — RAG provides factual grounding; fine-tuning provides domain behavior.
+
+**API Endpoints:**
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/datasets` | GET | List all datasets for the authenticated user (id, name, version, source_count, status, created_at, last_updated) |
+| `/api/datasets` | POST | Create a new dataset (name, description) → returns dataset_id, version v1 |
+| `/api/datasets/{id}` | GET | Get dataset details: sources list, version history, associated fine-tuned models |
+| `/api/datasets/{id}/sources` | POST | Add a source to the dataset (file upload, S3 reference, text paste, URL fetch) → creates new version if dataset exists |
+| `/api/datasets/{id}/sources/{source_id}` | GET | Get individual source metadata and processed content |
+| `/api/datasets/{id}/versions` | GET | List all versions of a dataset with changelog |
+| `/api/datasets/{id}/archive` | POST | Archive a dataset (soft-delete equivalent; hidden from selection but not deleted) |
+| `/api/fine-tune` | POST | Updated to accept `dataset_id` parameter; validates dataset exists and is not archived |
+
+**PostgreSQL Schema:**
+
+```sql
+CREATE TABLE datasets (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    version INT NOT NULL DEFAULT 1,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',  -- 'active', 'archived'
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_updated TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE dataset_sources (
+    id UUID PRIMARY KEY,
+    dataset_id UUID NOT NULL REFERENCES datasets(id),
+    dataset_version INT NOT NULL,
+    source_type VARCHAR(20) NOT NULL,  -- 'upload', 's3', 'text', 'url'
+    source_path VARCHAR(500) NOT NULL,  -- S3 path or content reference
+    file_name VARCHAR(255),
+    file_size BIGINT,
+    mime_type VARCHAR(100),
+    processed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE dataset_version_history (
+    id UUID PRIMARY KEY,
+    dataset_id UUID NOT NULL REFERENCES datasets(id),
+    version INT NOT NULL,
+    change_description TEXT,
+    source_count INT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Link fine-tuned models to the dataset version they were trained on
+ALTER TABLE fine_tuning_jobs ADD COLUMN dataset_id UUID REFERENCES datasets(id);
+ALTER TABLE fine_tuning_jobs ADD COLUMN dataset_version INT;
+```
+
+**S3 Storage Structure:**
+
+```
+s3://idkp-documents-{env}/datasets/
+├── {dataset_id}/
+│   ├── v1/
+│   │   ├── sources/
+│   │   │   ├── {source_id}.pdf          ← original uploaded file
+│   │   │   └── {source_id}.md           ← MarkItDown converted
+│   │   └── manifest.json                ← version metadata, source list
+│   ├── v2/
+│   │   ├── sources/
+│   │   │   └── ...
+│   │   └── manifest.json
+│   └── ...
+```
+
+**Versioning and Lifecycle:**
+- When a dataset is created → v1
+- When a source is added to an existing dataset → auto-increment to v2, v3, etc.
+- Previous versions remain intact in S3 (never overwritten)
+- Fine-tuning job records which version it used (`dataset_version` field)
+- User can view which version a fine-tuned model was trained on
+- **No deletion allowed:** Archive sets `status = 'archived'` → hidden from model selection dropdown but data preserved in S3
+- Archived datasets cannot be used for new fine-tuning jobs
+- Fine-tuned models trained on archived datasets continue to function (LoRA adapter already persisted)
+
+**Mixed-Domain Support:**
+- No domain restriction on dataset sources
+- A single dataset can contain legal, healthcare, finance, tech, and education documents together
+- Fine-tuning training pipeline processes all sources as a unified corpus
+- Dataset metadata includes optional `domain_tags` for user reference only (not enforced by system)
+
+**Frontend (Chainlit):**
+- Dataset management page: list of user's datasets with name, version, source count, status badge
+- "Create Dataset" button → modal with name + description fields
+- Click dataset → detail view showing version history table, sources list, "Add Source" button (4 options: Upload, Select from S3, Paste text, Fetch URL), "Archive" button (confirmation modal)
+- Archived datasets shown in collapsible "Archived" section at bottom
+- Dataset selector in fine-tuning flow: dropdown shows `{name} (v{version}) — {source_count} sources`; archived datasets grayed out with "archived" label (non-selectable)
+
 ### 3.2.3 Advanced RAG Pipeline
 
 The following advanced RAG components are all in scope:
@@ -655,7 +780,7 @@ The following are explicitly excluded from this project. They may be candidates 
 | **Integration with external live data feeds** (real-time APIs, stock feeds, etc.) | Only static documents and DB exports are in scope |
 | **Multi-tenant SaaS architecture** | Single-tenant deployment only in v1 |
 | **GDPR / data residency compliance engineering** | Legal review is the organisation's responsibility; platform is designed to run on-prem to support this, but compliance certification is out of scope |
-| **Automated fine-tuning on document updates** | Fine-tuning is periodic/manual; RAG handles real-time knowledge; auto-retraining adds risk of instability |
+| **Automated fine-tuning on document updates** | Fine-tuning is periodic/manual; RAG handles real-time knowledge; auto-retraining adds risk of instability. Dataset version changes (new sources added) do not trigger automatic re-training — users must explicitly trigger fine-tuning to train on a new dataset version. RAG layer continues to retrieve from updated documents independently |
 | **MoE models** (Llama 4 Scout, Qwen 3.5 MoE variants) | Require multi-GPU for fine-tuning (112+ GB VRAM for 4-bit); exceeds $30 budget; defer to v2 if Modal credits increase |
 
 ---
@@ -681,6 +806,7 @@ The project plan is built on the following assumptions. If any assumption is fou
 | A-13 | Phase 2 Model Evaluation Gate requires ~2–3 hours of GPU time on Modal.com for benchmarking multiple candidate models. This is factored into the $30 monthly budget |
 | A-14 | **AWS account** with S3 access is available. An S3 bucket (`idkp-documents-{env}`) with prefixes `raw/`, `converted/`, `checkpoints/`, `eval/comparisons/`, and `logs/` will be provisioned. S3 costs (~$1–2/month for 50–100 GB) are treated as infrastructure, not GPU compute |
 | A-15 | **Authentication system** exists or will be provisioned for all three deployment targets (public chatbot, internal company tool, agent API). The model selection UI and fine-tuning trigger endpoints require authenticated access to prevent unauthorized budget consumption |
+| A-16 | Users can create and manage training datasets via the dataset management API; dataset sources are accessible and processable (upload, S3 reference, text paste, URL fetch). Datasets are versioned and cannot be deleted (archive only). Fine-tuning jobs link to dataset versions for traceability |
 
 ---
 
@@ -694,7 +820,7 @@ The project plan is built on the following assumptions. If any assumption is fou
 | C-04 | **Mandatory citations** on all factual responses | RAG pipeline must extract and preserve page/section provenance through the full pipeline |
 | C-05 | **Accuracy and Speed are co-equal** | No aggressive context compression that hurts accuracy; no reranking skip that hurts latency; must be benchmarked together |
 | C-06 | **Fine-tuning must not regress general language ability** | Training data must include ~5–10% general-domain examples to prevent catastrophic forgetting |
-| C-07 | **Modal cost governance** — total monthly GPU spend must remain within the $30 free credit allocation. All GPU functions must specify explicit GPU type (`gpu="A10G"`, `gpu="L40S"`, or `gpu="A100-80GB"` as appropriate), timeout (`timeout=600`), and use full scale-to-zero (no keep-warm). Cost monitoring via Modal dashboard with 80% ($24) budget alert threshold. Any model tier upgrade beyond Tier 1 requires documented cost justification in the Phase 2 Model Selection Report. Fine-tuning jobs are subject to a hard block: if `total_spend + estimated_cost > $30`, the job is rejected (HTTP 403). Only one fine-tuning job runs at a time; additional requests are queued in FIFO order via PostgreSQL. Budget is recalculated on every API call (no caching) | Prevents runaway costs; ensures project stays within zero-cost GPU budget; formal gate for tier upgrades; hard block prevents unauthorized budget overruns from concurrent fine-tuning triggers |
+| C-07 | **Modal cost governance** — total monthly GPU spend must remain within the $30 free credit allocation. All GPU functions must specify explicit GPU type (`gpu="A10G"`, `gpu="L40S"`, or `gpu="A100-80GB"` as appropriate), timeout (`timeout=600`), and use full scale-to-zero (no keep-warm). Cost monitoring via Modal dashboard with 80% ($24) budget alert threshold. Any model tier upgrade beyond Tier 1 requires documented cost justification in the Phase 2 Model Selection Report. Fine-tuning jobs are subject to a hard block: if `total_spend + estimated_cost > $30`, the job is rejected (HTTP 403). Only one fine-tuning job runs at a time; additional requests are queued in FIFO order via PostgreSQL. Budget is recalculated on every API call (no caching). `POST /api/fine-tune` requires a `dataset_id` parameter; dataset must exist and be active (not archived) | Prevents runaway costs; ensures project stays within zero-cost GPU budget; formal gate for tier upgrades; hard block prevents unauthorized budget overruns from concurrent fine-tuning triggers; dataset linkage ensures traceability and prevents orphaned training runs |
 
 ---
 
@@ -719,6 +845,7 @@ The project plan is built on the following assumptions. If any assumption is fou
 | D-13 | Modal deployment runbook | 5 | GPU function configs (tier-matched), scale-to-zero strategy, cost monitoring ($24 alert threshold), and fallback procedures documented |
 | D-15 | Model Selection UI (catalog + fine-tune trigger + budget tracking) | 4 | `GET /api/models` returns all tier models with metadata; `POST /api/fine-tune` triggers jobs with hard block at $30; Chainlit model selection page with budget indicator deployed; queue-based single-job execution operational |
 | D-16 | AWS S3 bucket provisioning and lifecycle policies | 1 | S3 bucket `idkp-documents-{env}` created with prefixes `raw/`, `converted/`, `checkpoints/`, `eval/comparisons/`, `logs/`; lifecycle policies configured; IAM roles for Modal and ingestion workers |
+| D-17 | Dataset Management System (versioned, no deletion) | 1-4 | Dataset CRUD API operational (`/api/datasets`, `/api/datasets/{id}/sources`, `/api/datasets/{id}/versions`); PostgreSQL `datasets`, `dataset_sources`, `dataset_version_history` tables created; S3 dataset storage structure provisioned (`datasets/{dataset_id}/v{version}/`); versioning logic auto-increments on source add; no deletion enforced (archive only); dataset management UI deployed; dataset picker in fine-tuning flow shows version info; `POST /api/fine-tune` accepts `dataset_id` parameter and validates dataset is active |
 
 ---
 
@@ -759,4 +886,4 @@ A deliverable is considered **Done** when:
 > | 1.0 | June 3, 2026 | Project Initiation Team | Integrated MarkItDown (document ingestion) and Modal.com (serverless GPU); expanded ingestion from 4 to 11+ formats; reduced timeline from 14 to 12 weeks; updated cost model |
 > | 1.1 | June 3, 2026 | Project Manager | Approved for execution |
 > | 1.2 | June 3, 2026 | Project Initiation Team | Multi-domain scope (legal, healthcare, finance, tech, internal, education); multi-tier model selection (Tier 0–3: 7B→72B) with Qwen 2.5, Gemma 4, Ministral 3, DeepSeek-R1 distills; revised cost model for $30/month budget with < 100 queries/day full scale-to-zero; added Model Evaluation Gate (§3.2.2a); updated GPU tiers (A10G/L40S/A100-80GB); removed keep-warm schedule; added comprehensive evaluation framework (RAGAS + domain benchmark + cost/latency); MoE models excluded to v2 |
-| 1.3 | June 3, 2026 | Project Initiation Team | AWS S3 storage integration (raw documents, converted output, checkpoints, eval artifacts); base vs. fine-tuned model comparison with toggle switch UI and automated comparative evaluation (§3.2.2b); model selection UI with budget-aware fine-tuning trigger and queue (§3.2.4b); model catalog API (`GET /api/models`, `POST /api/fine-tune`, `GET /api/budget`); hard block at $30 for fine-tuning jobs; S3 event-driven ingestion (SNS → SQS → Modal worker); S3 lifecycle policies and cost alerts; updated constraints (C-07 hard block), assumptions (A-14, A-15), deliverables (D-03b, D-15, D-16) |
+| 1.3 | June 3, 2026 | Project Initiation Team | AWS S3 storage integration (raw documents, converted output, checkpoints, eval artifacts); base vs. fine-tuned model comparison with toggle switch UI and automated comparative evaluation (§3.2.2b); model selection UI with budget-aware fine-tuning trigger and queue (§3.2.4b); model catalog API (`GET /api/models`, `POST /api/fine-tune`, `GET /api/budget`); hard block at $30 for fine-tuning jobs; S3 event-driven ingestion (SNS → SQS → Modal worker); S3 lifecycle policies and cost alerts; dataset management (versioned, no deletion, mixed-domain) with PostgreSQL tables and S3 storage (`datasets/{dataset_id}/v{version}/`); dataset CRUD API (`/api/datasets`, `/api/datasets/{id}/sources`, `/api/datasets/{id}/versions`); dataset picker in fine-tuning flow; `POST /api/fine-tune` accepts `dataset_id` parameter; updated constraints (C-07 hard block + dataset linkage), assumptions (A-14, A-15, A-16), deliverables (D-03b, D-15, D-16, D-17) |
