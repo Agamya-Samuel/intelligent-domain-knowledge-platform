@@ -68,3 +68,25 @@ def decode_authjs_token(token: str) -> CurrentUser:
         raise ValueError("Token missing 'sub' claim")
 
     return CurrentUser(user_id=user_id, email=email, name=name)
+
+
+def verify_token(token: str) -> dict:
+    """
+    Decode a JWT token and return the raw payload dict.
+
+    Used by WebSocket endpoints that need the payload without
+    constructing a full CurrentUser object.
+    """
+    key = _derive_encryption_key(settings.AUTH_SECRET)
+    try:
+        payload_bytes = jwe.decrypt(token.encode(), key)
+        return json.loads(payload_bytes)
+    except (JWEError, json.JSONDecodeError, UnicodeDecodeError):
+        try:
+            return jwt.decode(
+                token,
+                settings.AUTH_SECRET,
+                algorithms=["HS256"],
+            )
+        except JWTError as exc:
+            raise ValueError(f"Invalid or expired token: {exc}") from exc
