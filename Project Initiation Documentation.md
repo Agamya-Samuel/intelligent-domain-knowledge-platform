@@ -4,11 +4,11 @@
 
 ---
 
-> **Document Version:** 1.0
-> **Date:** June 3, 2026
-> **Status:** Draft — Awaiting Stakeholder Approval
-> **Prepared By:** Project Initiation Team
-> **Classification:** Internal / Confidential
+> **Document Version:** 1.0   
+> **Date:** June 3, 2026      
+> **Status:** Draft — Awaiting Stakeholder Approval   
+> **Prepared By:** Project Initiation Team      
+> **Classification:** Internal / Confidential   
 
 ---
 
@@ -55,7 +55,7 @@ The following requirements each narrow the solution space significantly:
 - **Daily-to-real-time knowledge changes** — rules out retraining or periodic fine-tuning as the primary knowledge update mechanism
 - **10–100 mixed-format documents** — rules out simple prompt stuffing (context window overflow); demands a proper retrieval layer
 - **Multi-document reasoning and compliance/legal analysis** — rules out naive single-chunk retrieval; demands cross-document synthesis
-- **Mandatory citations** ("According to page 14 of the PDF...") — rules out generation-only approaches with no retrieval grounding
+- **Mandatory citations** ("According to page 14 of the source...") — rules out generation-only approaches with no retrieval grounding
 - **Open-source only, no proprietary APIs** — rules out OpenAI, Anthropic, Cohere, and similar managed services
 - **Accuracy + Speed as co-equal priorities** — rules out any single-component approach that sacrifices one for the other
 
