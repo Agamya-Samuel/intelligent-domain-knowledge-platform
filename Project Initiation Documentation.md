@@ -4,7 +4,7 @@
 
 ---
 
-> **Document Version:** 1.0   
+> **Document Version:** 1.1   
 > **Date:** June 3, 2026      
 > **Status:** Draft — Awaiting Stakeholder Approval   
 > **Prepared By:** Project Initiation Team      
@@ -30,7 +30,7 @@
 
 Large Language Models (LLMs) possess a hard training data cutoff — they cannot answer questions about documentation, policies, regulations, or knowledge that post-dates their training. For organizations with living, frequently updated corpora, this makes raw LLMs unreliable and dangerous to deploy.
 
-This Business Case proposes building the **Intelligent Domain Knowledge Platform (IDKP)** — a production-grade, 100% open-source AI system that combines **domain-specific Fine-tuning** with an **Advanced Retrieval-Augmented Generation (RAG)** pipeline. The system will serve a mixed corpus of 10–100 documents (PDFs, Markdown, code repositories, database records) that updates daily to near-real-time, and must answer complex queries across fact lookup, summarization, multi-document reasoning, technical support, and compliance/legal analysis — with precise source citations.
+This Business Case proposes building the **Intelligent Domain Knowledge Platform (IDKP)** — a production-grade, 100% open-source AI system that combines **domain-specific Fine-tuning** with an **Advanced Retrieval-Augmented Generation (RAG)** pipeline. The system will serve a mixed corpus of 10–100+ documents across diverse formats (PDFs, Microsoft Office files, Markdown, HTML, code repositories, database records, images with OCR, EPubs, and more) that updates daily to near-real-time, and must answer complex queries across fact lookup, summarization, multi-document reasoning, technical support, and compliance/legal analysis — with precise source citations. Document conversion is unified through **MarkItDown** (Microsoft), providing a single ingestion interface for 10+ file formats with LLM-optimized Markdown output.
 
 The recommended approach combines Fine-tuning + Advanced RAG because each solves a different class of problem: Fine-tuning instills domain vocabulary, tone, and reasoning patterns into the model permanently; RAG keeps the knowledge layer current without retraining, retrieves grounding evidence, and enables citations. Neither alone meets all stated requirements.
 
@@ -53,7 +53,7 @@ Every LLM is trained on a fixed snapshot of the internet and published documents
 The following requirements each narrow the solution space significantly:
 
 - **Daily-to-real-time knowledge changes** — rules out retraining or periodic fine-tuning as the primary knowledge update mechanism
-- **10–100 mixed-format documents** — rules out simple prompt stuffing (context window overflow); demands a proper retrieval layer
+- **10–100+ mixed-format documents** — rules out simple prompt stuffing (context window overflow); demands a proper retrieval layer with unified document conversion via MarkItDown
 - **Multi-document reasoning and compliance/legal analysis** — rules out naive single-chunk retrieval; demands cross-document synthesis
 - **Mandatory citations** ("According to page 14 of the source...") — rules out generation-only approaches with no retrieval grounding
 - **Open-source only, no proprietary APIs** — rules out OpenAI, Anthropic, Cohere, and similar managed services
@@ -118,7 +118,9 @@ The proposed solution is a two-layer architecture that separates **what the mode
 | **Vector database** | Qdrant or Weaviate | OSS-first; production-grade; metadata filtering support |
 | **Reranker** | BGE-Reranker-v2-m3 (Cross-Encoder) | Token-level late interaction; 30%+ relevance gains on hybrid results |
 | **Orchestration** | LlamaIndex + LangChain | Modular; 300+ integrations; agent workflow support |
-| **Document processing** | Unstructured.io + PyMuPDF + Tree-sitter | PDFs, Markdown, code repos, DB records |
+| **Document processing** | MarkItDown (Microsoft) + Tree-sitter | Unified conversion for 10+ formats (PDF, DOCX, PPTX, XLSX, HTML, Images/OCR, Audio, EPub, CSV/JSON/XML); Tree-sitter retained for deep code parsing |
+| **GPU compute (fine-tuning)** | Modal.com (serverless A10G/A100) | Pay-per-second billing; scale-to-zero; no GPU procurement delays; $30 free tier sufficient for development |
+| **GPU compute (inference)** | Modal.com (serverless A10G with hybrid keep-warm) | Cold-start for off-hours; keep-warm during business hours; 80–90% cost reduction vs. always-on |
 | **LLM serving** | vLLM | High-throughput, low-latency open-source inference server |
 | **Evaluation** | RAGAS | RAG Triad: context relevance, groundedness, answer relevance |
 | **Monitoring** | OpenTelemetry + Langfuse | OSS tracing and observability |
@@ -153,10 +155,11 @@ The same backend serves three stated use cases — public chatbot, internal comp
 
 | Cost Category | One-time | Monthly (recurring) |
 |---|---|---|
-| GPU compute (fine-tuning, A100/H100 cloud or on-prem) | ~$800–$2,500 per training run | ~$200–$600 (periodic re-tune) |
-| Inference server (vLLM on 2× A10G or equivalent) | Hardware or cloud provisioning | ~$500–$1,200 |
+| GPU compute — fine-tuning (Modal.com serverless A10G) | ~$1–$10 per training run | ~$5–$50 (periodic re-tune) |
+| GPU compute — inference (Modal.com serverless A10G) | — | ~$100–$300 (hybrid keep-warm/scale-to-zero) |
+| GPU compute — storage (Modal Volume, ~7 GB) | — | ~$0.63 (persistent model storage) |
 | Vector database hosting (Qdrant self-hosted) | Setup effort | ~$50–$200 (storage + ops) |
-| Engineering (ML + Backend + DevOps) | ~3–4 FTE × 14 weeks | ~0.5–1 FTE ongoing |
+| Engineering (ML + Backend + DevOps) | ~3–4 FTE × 12 weeks | ~0.5–1 FTE ongoing |
 | Evaluation and QA dataset creation | ~2–4 weeks of effort | Periodic |
 
 > Note: Figures are indicative and depend heavily on infrastructure choices (cloud vs on-prem), team seniority, and document volume growth.
@@ -186,15 +189,16 @@ The same backend serves three stated use cases — public chatbot, internal comp
 | Fine-tuning data quality is poor | Medium | High | Invest in Q&A pair curation; use RAGAS evaluation to catch regressions early |
 | Real-time ingestion pipeline latency too high | Medium | Medium | Use event-driven ingestion (webhook/watch); set SLA at < 5 min per document change |
 | Retrieval precision insufficient for legal/compliance queries | Medium | High | Add metadata filters, cross-encoder reranking, and Self-RAG verification step |
-| GPU availability for training runs | Low | Medium | Pre-book cloud GPU instances; use QLoRA to reduce VRAM requirements |
-| Scope creep (multi-language, audio, images) | High | Medium | Lock scope statement before sprint 1; defer to v2 roadmap |
+| GPU cold start adds latency to first inference request | Medium | Medium | Use hybrid keep-warm during business hours (08:00–18:00); accept cold start (~30s) for off-hours and dev environments |
+| Modal.com pricing changes or service disruption | Low | Medium | Maintain infrastructure abstraction layer; fallback plan to traditional cloud GPU (AWS/GCP) |
+| Scope creep (multi-language, new modalities beyond MarkItDown scope) | High | Medium | Lock scope statement before sprint 1; defer to v2 roadmap |
 | Model drift after domain corpus changes significantly | Low | High | Set up automated RAGAS evaluation; schedule re-tune trigger on drift threshold |
 
 ---
 
 ## 1.7 Recommendation
 
-**Proceed with the Fine-tuning + Advanced RAG approach** as proposed. The combination uniquely satisfies all stated requirements: open-source-only, daily-to-real-time document updates, citation-backed responses, multi-query type support, and triple deployment targets (public chatbot, internal tool, agent system).
+**Proceed with the Fine-tuning + Advanced RAG approach** as proposed, leveraging **MarkItDown** for unified document ingestion and **Modal.com** for serverless GPU compute. The combination uniquely satisfies all stated requirements: open-source-only, daily-to-real-time document updates across 11+ formats, citation-backed responses, multi-query type support, and triple deployment targets (public chatbot, internal tool, agent system) — delivered in 12 weeks with significantly reduced GPU infrastructure costs.
 
 The investment is justified by the productivity gains, elimination of proprietary API dependency, and the long-term strategic value of owning a domain-adapted AI layer that improves continuously.
 
@@ -215,13 +219,15 @@ The investment is justified by the productivity gains, elimination of proprietar
 | **Date** | June 3, 2026 |
 | **Project Sponsor** | To be assigned |
 | **Project Manager** | To be assigned |
-| **Target Go-Live** | 14 weeks from kickoff |
+| **Target Go-Live** | 12 weeks from kickoff |
 
 ---
 
 ## 2.2 Project Overview
 
 The IDKP project delivers a **production-grade, open-source AI question-answering system** that draws on a continuously updated private knowledge corpus. The platform serves three deployment targets simultaneously: a public-facing chatbot, an internal company tool, and a programmatic agent interface.
+
+Document ingestion is unified through **MarkItDown** (Microsoft), supporting 10+ file formats (PDF, DOCX, PPTX, XLSX, HTML, Images with OCR, EPub, Audio, CSV/JSON/XML, and code repositories) via a single conversion interface that outputs LLM-optimized Markdown. GPU compute for fine-tuning and inference is provided by **Modal.com** serverless infrastructure, enabling pay-per-second billing with scale-to-zero capabilities and eliminating GPU procurement delays.
 
 The system uses a two-layer architecture:
 
@@ -249,21 +255,24 @@ The system uses a two-layer architecture:
 
 ### Phase 1 — Foundation (Weeks 1–4)
 
-- Document ingestion pipeline supporting PDF, Markdown, code repositories, and database records
+- Document ingestion pipeline powered by **MarkItDown** supporting: PDF, DOCX, PPTX, XLSX, Markdown, HTML, Images (OCR), EPub, CSV/JSON/XML, Audio transcription, and code repositories (via Tree-sitter for deep parsing)
+- Markdown Normalization Layer for metadata extraction (source file, document type, page numbers, section headers) from MarkItDown output
 - Parsing, cleaning, and metadata extraction per source type
 - Semantic chunking strategy implemented and benchmarked
 - Vector database provisioned with hybrid index (dense + BM25)
 - Baseline RAG pipeline (naive retrieval) with evaluation scaffold (RAGAS)
 - Ground-truth evaluation dataset (minimum 200 Q&A pairs) curated from document corpus
+- **Modal.com** account provisioned; SDK integrated; initial model download to Modal Volume
 
 ### Phase 2 — Fine-tuning (Weeks 5–7)
 
 - Fine-tuning dataset prepared (instruction-tuning format from domain Q&A pairs and document summaries)
-- QLoRA training run executed on selected base model (Llama 3.1 8B or Mistral 7B)
+- QLoRA training run executed on **Modal.com** (A10G GPU, serverless) using selected base model (Llama 3.1 8B or Mistral 7B)
 - LoRA adapter evaluated against baseline; domain benchmark report produced
-- Model served via vLLM with LoRA adapter loading support
+- LoRA adapter persisted to Modal Volume for persistent storage across runs
+- Model served via vLLM on Modal with LoRA adapter hot-loading support
 
-### Phase 3 — Advanced RAG (Weeks 8–10)
+### Phase 3 — Advanced RAG (Weeks 8–9)
 
 - Hybrid retrieval implemented (BM25 + dense vector search with Reciprocal Rank Fusion)
 - Cross-encoder reranker integrated (BGE-Reranker-v2-m3)
@@ -272,23 +281,25 @@ The system uses a two-layer architecture:
 - Citation extraction and injection into responses implemented
 - RAGAS evaluation: faithfulness, context relevance, answer relevance tracked end-to-end
 
-### Phase 4 — Integration & Testing (Weeks 11–12)
+### Phase 4 — Integration & Testing (Weeks 10–11)
 
-- Fine-tuned LLM + Advanced RAG pipeline integrated end-to-end
+- Fine-tuned LLM + Advanced RAG pipeline integrated end-to-end on Modal serverless infrastructure
 - Public chatbot interface deployed (Chainlit or Open WebUI)
 - Internal REST API documented and tested (OpenAPI spec)
 - Agent tool wrapper implemented (LangChain/LlamaIndex tool interface)
-- Load testing: simulate 100 concurrent users; validate latency SLA
+- Load testing: simulate 100 concurrent users; validate latency SLA (including cold-start scenarios)
 - Security review: input sanitisation, rate limiting, prompt injection hardening
 
-### Phase 5 — Deployment & Monitoring (Weeks 13–14)
+### Phase 5 — Deployment & Monitoring (Week 12)
 
-- Production infrastructure provisioned (inference server, vector DB, ingestion worker)
+- Production infrastructure provisioned on Modal.com (serverless inference, embedding functions, ingestion workers)
+- Hybrid keep-warm/scale-to-zero schedule configured (keep-warm 08:00–18:00 business hours; scale-to-zero off-hours)
 - CI/CD pipeline for document ingestion (trigger on file change / DB event)
-- Automated re-indexing on document update
-- OpenTelemetry tracing + Langfuse dashboard live
+- Automated re-indexing on document update via MarkItDown conversion pipeline
+- OpenTelemetry tracing + Langfuse dashboard live (including Modal function metrics)
 - Automated RAGAS regression testing on weekly eval batch
-- Runbooks: deployment, reindexing, model re-tune trigger, rollback procedures
+- Runbooks: Modal deployment, reindexing, model re-tune trigger, rollback procedures
+- Modal cost monitoring dashboard with budget alerts (80% threshold)
 - Stakeholder handover and demo
 
 ---
@@ -301,9 +312,19 @@ The system uses a two-layer architecture:
 |---|---|---|
 | Base LLM | Llama 3.1 8B-Instruct | Meta Llama 3.1 Community License |
 | Fine-tuning framework | Unsloth + PEFT (QLoRA) | Apache 2.0 |
-| LLM inference | vLLM | Apache 2.0 |
+| LLM inference | vLLM (on Modal.com) | Apache 2.0 |
 | Embedding model | BGE-M3 | MIT |
 | Reranker | BGE-Reranker-v2-m3 | MIT |
+
+### GPU Compute Infrastructure
+
+| Component | Technology | Pricing Model |
+|---|---|---|
+| Fine-tuning GPU | Modal.com A10G (24 GB VRAM) | ~$1.10/hr, pay-per-second, scale-to-zero |
+| Inference GPU | Modal.com A10G (hybrid keep-warm) | ~$1.10/hr active; $0 idle (scale-to-zero) |
+| Embedding GPU | Modal.com T4 (16 GB VRAM) | ~$0.60/hr, on-demand for ingestion |
+| Persistent storage | Modal Volume | $0.09/GB/month (~7 GB for model + adapter) |
+| SDK | Modal Python SDK | MIT |
 
 ### Retrieval & Storage
 
@@ -318,7 +339,13 @@ The system uses a two-layer architecture:
 
 | Component | Technology | License |
 |---|---|---|
-| PDF parsing | PyMuPDF + Unstructured.io | AGPL (OSS) |
+| Unified document conversion | MarkItDown (Microsoft) | MIT |
+| PDF parsing | MarkItDown (built-in) | MIT |
+| Office documents (DOCX, PPTX, XLSX) | MarkItDown (built-in) | MIT |
+| HTML parsing | MarkItDown (built-in) | MIT |
+| Image OCR | MarkItDown (built-in) | MIT |
+| Audio transcription | MarkItDown (built-in) | MIT |
+| EPub parsing | MarkItDown (built-in) | MIT |
 | Markdown parsing | Python-Markdown / Mistune | BSD |
 | Code repo parsing | Tree-sitter | MIT |
 | Chunking | LlamaIndex semantic chunker | MIT |
@@ -359,28 +386,30 @@ The system uses a two-layer architecture:
 ## 2.7 High-Level Timeline
 
 ```
-Week  1  2  3  4  5  6  7  8  9  10  11  12  13  14
+Week  1  2  3  4  5  6  7  8  9  10  11  12
       │────────────────│
       Phase 1: Foundation
                        │──────────│
-                       Phase 2: Fine-tuning
-                                  │──────────│
+                       Phase 2: Fine-tuning (Modal)
+                                  │───────│
                                   Phase 3: Advanced RAG
-                                             │───────────│
-                                             Phase 4: Integration
-                                                          │────────│
-                                                          Phase 5: Deploy
+                                          │────────│
+                                          Phase 4: Integration
+                                                   │────│
+                                                   Phase 5: Deploy (Modal)
 ```
 
 ---
 
 ## 2.8 Key Assumptions
 
-- GPU compute (minimum 24 GB VRAM, e.g., NVIDIA A10G / RTX 4090) is available or can be provisioned for fine-tuning within Week 1
+- **Modal.com** account with $30 free credits is available; additional credits purchasable at $0.000306/sec (A10G) — sufficient for all fine-tuning runs and low-to-moderate traffic inference
+- GPU compute via Modal.com (A10G, 24 GB VRAM) is provisionable within Week 1 via serverless functions — no hardware procurement required
 - Domain experts are available to curate a minimum of 200 high-quality Q&A evaluation pairs in Phase 1
-- Document sources (PDFs, Markdown files, code repositories, DB records) are accessible to the engineering team from the start of Phase 1
-- The team has working proficiency in Python, PyTorch, and Hugging Face ecosystem
+- Document sources (PDFs, Office files, Markdown, HTML, images, code repositories, DB records) are accessible to the engineering team from the start of Phase 1
+- The team has working proficiency in Python, PyTorch, Hugging Face ecosystem, and Modal SDK
 - No multi-language requirement in v1 (English only)
+- Modal cold start (~30s) is acceptable for off-hours and first-query scenarios; keep-warm containers used during business hours to meet P95 latency SLA
 
 ---
 
@@ -394,6 +423,7 @@ Week  1  2  3  4  5  6  7  8  9  10  11  12  13  14
 | Response Latency (P95) | ≤ 3 seconds | Load test + production monitoring |
 | Document Ingestion Latency | ≤ 5 minutes | Ingestion pipeline monitoring |
 | Fine-tuned model lift over base | ≥ 15% | Domain benchmark (held-out eval set) |
+| Modal GPU cost efficiency | ≤ $300/month (hybrid schedule) | Modal usage dashboard + cost alerts |
 | System uptime | ≥ 99.5% (business hours) | Infrastructure monitoring |
 
 ---
@@ -414,22 +444,33 @@ This Scope Statement defines the authorised boundaries of the IDKP project. It s
 
 ### 3.2.1 Document Ingestion Pipeline
 
-- Ingestion of **PDF documents** (text-based; scanned PDFs with OCR as stretch goal)
+Document conversion is unified through **MarkItDown** (Microsoft), providing a single ingestion interface that outputs LLM-optimized Markdown. The following source formats are supported:
+
+- Ingestion of **PDF documents** (text-based and scanned via built-in OCR)
+- Ingestion of **Microsoft Office documents**: Word (.docx), PowerPoint (.pptx), Excel (.xlsx)
 - Ingestion of **Markdown documents** (including frontmatter metadata)
-- Ingestion of **code repositories** (Python, JavaScript, and generic text-based formats; parsed with Tree-sitter)
-- Ingestion of **database records** (structured data exported or streamed as JSON/CSV; ingested as text chunks with metadata)
-- Metadata extraction per document: source file, document type, creation/update timestamp, page numbers, section headers
+- Ingestion of **HTML web content** (documentation sites, web archives)
+- Ingestion of **image documents** with OCR (scanned documents, diagrams with text; EXIF metadata extraction)
+- Ingestion of **audio files** (EXIF metadata + speech transcription)
+- Ingestion of **EPub e-books** (technical manuals, documentation)
+- Ingestion of **text-based formats**: CSV, JSON, XML (structured data as Markdown)
+- Ingestion of **ZIP archives** (automatic iteration over contents)
+- Ingestion of **YouTube URLs** (video transcript extraction)
+- Ingestion of **code repositories** (Python, JavaScript, and generic text-based formats; parsed with **Tree-sitter** for deep AST-level analysis beyond MarkItDown's text-level conversion)
+- **Markdown Normalization Layer**: post-processing step for metadata extraction (source file, document type, creation/update timestamp, page numbers, section headers) from MarkItDown's unified output
 - **Real-time/near-real-time update mechanism**: event-driven re-ingestion triggered by file system watch, webhook, or database change event; target latency ≤ 5 minutes end-to-end
 - Document deduplication and version tracking (new version replaces old vectors for the same document ID)
 
 ### 3.2.2 Fine-tuning Pipeline
 
 - **Base model selection**: Llama 3.1 8B-Instruct or Mistral 7B-Instruct (evaluated and chosen in Phase 2)
-- **QLoRA fine-tuning** using PEFT + Unsloth on curated domain instruction-tuning dataset
+- **QLoRA fine-tuning** using PEFT + Unsloth on curated domain instruction-tuning dataset, executed on **Modal.com** serverless GPU infrastructure (A10G, 24 GB VRAM)
 - Fine-tuning dataset construction from: domain Q&A pairs, document summaries, multi-document reasoning examples, citation-format examples
-- LoRA adapter training, checkpointing, and evaluation
+- LoRA adapter training, checkpointing, and evaluation via Modal Functions with explicit GPU type selection (`gpu="A10G"`)
+- **Modal Volume** persistence: base model and LoRA adapter stored on persistent volume to avoid re-download on cold starts
+- Function timeouts enforced (`timeout=600`) to prevent runaway costs from bugs
 - Domain benchmark evaluation report comparing fine-tuned vs base model
-- Adapter merging and serving setup via vLLM with LoRA hot-loading
+- Adapter merging and serving setup via vLLM on Modal with LoRA hot-loading support
 
 ### 3.2.3 Advanced RAG Pipeline
 
@@ -478,12 +519,14 @@ All three deployment targets are in scope:
 
 The following are explicitly excluded from this project. They may be candidates for a future v2 roadmap.
 
+> **Note:** Modal.com is used as GPU compute infrastructure (serverless hosting for open-source models). This does not violate the open-source constraint as Modal provides compute resources, not proprietary models. All models running on Modal remain 100% open-source.
+
 | Item | Reason for Exclusion |
 |---|---|
-| **Proprietary LLM APIs** (OpenAI, Anthropic, Cohere, etc.) | Hard constraint: open-source only |
+| **Proprietary LLM APIs** (OpenAI, Anthropic, Cohere, etc.) | Hard constraint: open-source models only; Modal.com is used for compute infrastructure, not proprietary model APIs |
 | **Multi-language support** (non-English) | Deferred to v2; increases embedding and evaluation complexity significantly |
 | **Voice / audio interfaces** | Distinct product category; separate project |
-| **Image or video document processing** | Scanned PDF OCR is a stretch goal only; no visual QA or video indexing |
+| **Image or video document processing (advanced)** | Basic image OCR is now in scope via MarkItDown; advanced visual QA, video indexing, and video content analysis deferred to v2 |
 | **Full model retraining from scratch** | QLoRA fine-tuning sufficient; full training requires prohibitive compute |
 | **Custom UI/UX design** | Functional OSS chatbot UI only; bespoke frontend design deferred |
 | **Mobile application** | Web-based chatbot is sufficient for v1 |
@@ -500,15 +543,17 @@ The project plan is built on the following assumptions. If any assumption is fou
 
 | # | Assumption |
 |---|---|
-| A-01 | GPU compute with ≥ 24 GB VRAM (e.g., NVIDIA A10G, A100, or RTX 4090) is available or provisionable by the start of Phase 2 |
-| A-02 | Domain experts can dedicate ~2–4 hours per week during Phase 1 to curate ground-truth Q&A evaluation pairs |
-| A-03 | All documents (PDFs, Markdown, code repos, DB records) are accessible in a readable, non-DRM-protected format |
-| A-04 | The team has working proficiency in Python, PyTorch, Hugging Face Transformers, and FastAPI |
-| A-05 | A minimum of 200 high-quality Q&A pairs can be curated from the document corpus for evaluation |
-| A-06 | An infrastructure environment (cloud or on-prem) with at least 32 GB RAM and 500 GB storage is available for hosting the vector DB and inference server |
-| A-07 | Document source systems (file system, DB, code repo) can emit change events or be polled; access credentials will be provided before Phase 1 |
-| A-08 | v1 documents are in English only |
-| A-09 | No existing vendor contracts restrict use of the proposed open-source components |
+| A-01 | **Modal.com** account with $30 free credits is available; additional credits purchasable at $0.000306/sec for A10G — sufficient for all fine-tuning runs and low-to-moderate traffic inference |
+| A-02 | GPU compute via Modal.com (A10G, 24 GB VRAM) is provisionable within Week 1 via serverless functions — no hardware procurement required |
+| A-03 | Domain experts can dedicate ~2–4 hours per week during Phase 1 to curate ground-truth Q&A evaluation pairs |
+| A-04 | All documents (PDFs, Office files, Markdown, HTML, images, code repos, DB records) are accessible in a readable, non-DRM-protected format |
+| A-05 | The team has working proficiency in Python, PyTorch, Hugging Face Transformers, FastAPI, and Modal SDK |
+| A-06 | A minimum of 200 high-quality Q&A pairs can be curated from the document corpus for evaluation |
+| A-07 | An infrastructure environment (cloud or on-prem) with at least 32 GB RAM and 500 GB storage is available for hosting the vector DB (Qdrant) and PostgreSQL document store; Modal handles all GPU workloads |
+| A-08 | Document source systems (file system, DB, code repo) can emit change events or be polled; access credentials will be provided before Phase 1 |
+| A-09 | v1 documents are in English only |
+| A-10 | No existing vendor contracts restrict use of the proposed open-source components |
+| A-11 | Modal cold start (~30s for model loading) is acceptable for off-hours and first-query scenarios; keep-warm containers used during business hours (08:00–18:00) to meet P95 ≤ 3s latency SLA |
 
 ---
 
@@ -516,12 +561,13 @@ The project plan is built on the following assumptions. If any assumption is fou
 
 | # | Constraint | Impact |
 |---|---|---|
-| C-01 | **100% open-source stack** — no proprietary model APIs, no closed-source SaaS | All component selection must verify OSS license (Apache 2.0, MIT, BSD preferred) |
-| C-02 | **No calls to OpenAI, Anthropic, or equivalent APIs** at any point in the pipeline | Evaluation (including LLM-as-judge) must use self-hosted open-source models only |
-| C-03 | **Daily-to-near-real-time document updates** must be reflected in query results | Ingestion pipeline must be event-driven, not batch-nightly |
+| C-01 | **100% open-source software stack** — no proprietary model APIs, no closed-source SaaS | All component selection must verify OSS license (Apache 2.0, MIT, BSD preferred); infrastructure providers (Modal.com, cloud) are exempt as they provide compute resources, not proprietary models |
+| C-02 | **No calls to OpenAI, Anthropic, or equivalent APIs** at any point in the pipeline | Evaluation (including LLM-as-judge) must use self-hosted open-source models only; all models run on Modal remain open-source |
+| C-03 | **Daily-to-near-real-time document updates** must be reflected in query results | Ingestion pipeline must be event-driven, not batch-nightly; MarkItDown conversion + Modal embedding ensures fast re-indexing |
 | C-04 | **Mandatory citations** on all factual responses | RAG pipeline must extract and preserve page/section provenance through the full pipeline |
 | C-05 | **Accuracy and Speed are co-equal** | No aggressive context compression that hurts accuracy; no reranking skip that hurts latency; must be benchmarked together |
 | C-06 | **Fine-tuning must not regress general language ability** | Training data must include ~5–10% general-domain examples to prevent catastrophic forgetting |
+| C-07 | **Modal cost governance** — all GPU functions must specify explicit GPU type, timeout, and use scale-to-zero for non-business hours | Prevents accidental A100/H100 usage and idle billing; cost monitoring with 80% budget alerts |
 
 ---
 
@@ -529,18 +575,19 @@ The project plan is built on the following assumptions. If any assumption is fou
 
 | ID | Deliverable | Phase | Acceptance Criteria |
 |---|---|---|---|
-| D-01 | Document ingestion pipeline (all 4 source types) | 1 | All source types indexed; documents searchable within ≤ 5 min of update |
+| D-01 | Document ingestion pipeline (11 source types via MarkItDown + Tree-sitter) | 1 | All source types indexed; documents searchable within ≤ 5 min of update |
 | D-02 | Ground-truth evaluation dataset (≥ 200 Q&A pairs) | 1 | Reviewed and approved by domain expert |
 | D-03 | Baseline RAG evaluation report | 1 | RAGAS metrics established as baseline |
-| D-04 | QLoRA fine-tuning run + LoRA adapter | 2 | ≥ 15% improvement over base on domain benchmark |
+| D-04 | QLoRA fine-tuning run + LoRA adapter (via Modal.com) | 2 | ≥ 15% improvement over base on domain benchmark; adapter persisted to Modal Volume |
 | D-05 | Fine-tuned model domain benchmark report | 2 | Signed off by ML Engineer and Product Owner |
 | D-06 | Advanced RAG pipeline (all 9 components) | 3 | Retrieval Precision@5 ≥ 85%; citations present in ≥ 95% of factual answers |
-| D-07 | End-to-end integrated system | 4 | RAGAS faithfulness ≥ 0.90; P95 latency ≤ 3 s under load |
+| D-07 | End-to-end integrated system (Modal-hosted inference) | 4 | RAGAS faithfulness ≥ 0.90; P95 latency ≤ 3 s under load (warm containers) |
 | D-08 | Public chatbot (live URL) | 4–5 | User acceptance testing passed |
 | D-09 | Internal REST API (OpenAPI spec) | 4–5 | API contract reviewed and approved |
 | D-10 | Agent tool wrapper | 4–5 | Successfully executes in LangGraph and LlamaIndex agent demos |
-| D-11 | Monitoring dashboard (Langfuse + OTel) | 5 | All defined metrics visible; alert rules active |
+| D-11 | Monitoring dashboard (Langfuse + OTel + Modal metrics) | 5 | All defined metrics visible; alert rules active; Modal cost tracking enabled |
 | D-12 | Operator runbooks + architecture documentation | 5 | Reviewed and signed off by DevOps and Product Owner |
+| D-13 | Modal deployment runbook | 5 | GPU function configs, keep-warm schedules, cost monitoring, and fallback procedures documented |
 
 ---
 
@@ -578,4 +625,5 @@ A deliverable is considered **Done** when:
 > | Version | Date | Author | Change |
 > |---|---|---|---|
 > | 0.1 | June 3, 2026 | Project Initiation Team | Initial draft |
-> | 1.0 | TBD | Project Manager | Approved for execution |
+> | 1.0 | June 3, 2026 | Project Initiation Team | Integrated MarkItDown (document ingestion) and Modal.com (serverless GPU); expanded ingestion from 4 to 11+ formats; reduced timeline from 14 to 12 weeks; updated cost model |
+> | 1.1 | TBD | Project Manager | Approved for execution |
