@@ -2,7 +2,7 @@
 FastAPI dependencies — auth extraction and database session injection.
 """
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 
 from app.core.security import CurrentUser, decode_authjs_token
 from app.db.session import get_db  # re-exported for endpoint use
