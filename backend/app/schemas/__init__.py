@@ -1,5 +1,18 @@
 """Pydantic schemas — import all schemas here."""
 
+from app.schemas.chat import (
+    ChatMessageResponse,
+    ChatRequest,
+    ChatSessionDetailResponse,
+    ChatSessionResponse,
+    CreateSessionRequest,
+    ModelVariant,
+    SetModelVariantRequest,
+    SSECitationEvent,
+    SSEDoneEvent,
+    SSEErrorEvent,
+    SSETokenEvent,
+)
 from app.schemas.document import (
     DocumentCreateResponse,
     DocumentDetailResponse,
@@ -19,6 +32,17 @@ from app.schemas.knowledge_relation import (
 from app.schemas.user import UserCreateRequest, UserResponse
 
 __all__ = [
+    "ChatMessageResponse",
+    "ChatRequest",
+    "ChatSessionDetailResponse",
+    "ChatSessionResponse",
+    "CreateSessionRequest",
+    "ModelVariant",
+    "SetModelVariantRequest",
+    "SSEDoneEvent",
+    "SSECitationEvent",
+    "SSEErrorEvent",
+    "SSETokenEvent",
     "DocumentChunkResponse",
     "DocumentCreateResponse",
     "DocumentDetailResponse",
