@@ -1,0 +1,52 @@
+[
+  {
+    "question": "What is the purpose of GDPR Article 17?",
+    "ground_truth": "GDPR Article 17 establishes the 'right to erasure,' also known as the 'right to be forgotten.' It allows individuals to request the deletion of their personal data when it is no longer necessary, when consent is withdrawn, or when the data has been unlawfully processed.",
+    "context": "GDPR_Regulation_2024.pdf, Article 17, pages 14-16"
+  },
+  {
+    "question": "What are the key requirements for HIPAA compliance in healthcare data handling?",
+    "ground_truth": "HIPAA requires covered entities to implement administrative, physical, and technical safeguards to protect Protected Health Information (PHI). Key requirements include: conducting risk assessments, encrypting data at rest and in transit, implementing access controls, maintaining audit logs, training workforce members, and establishing breach notification procedures with a 60-day reporting window.",
+    "context": "HIPAA_Security_Rule_Guide.pdf, Section 2.1, pages 8-12"
+  },
+  {
+    "question": "How does the SOC 2 Type II audit differ from Type I?",
+    "ground_truth": "SOC 2 Type I evaluates the design of controls at a specific point in time, assessing whether the controls are properly designed to meet the Trust Services Criteria. Type II evaluates both the design and operating effectiveness of controls over a minimum period of 6 months, providing evidence that controls have been consistently applied.",
+    "context": "SOC2_Compliance_Framework.pdf, Chapter 3, pages 22-25"
+  },
+  {
+    "question": "What is the principle of least privilege in access control?",
+    "ground_truth": "The principle of least privilege states that users and systems should only be granted the minimum permissions necessary to perform their intended functions. This reduces the attack surface and limits potential damage from security breaches. Implementation involves role-based access control (RBAC), just-in-time access provisioning, and regular permission reviews.",
+    "context": "Access_Control_Best_Practices.pdf, Section 4.2, pages 31-33"
+  },
+  {
+    "question": "What are the main components of a zero-trust architecture?",
+    "ground_truth": "Zero-trust architecture is built on five core pillars: identity verification, device health assessment, network segmentation, application security, and data protection. Key principles include 'never trust, always verify,' micro-segmentation, continuous authentication, least-privilege access, and assuming breach mentality. Implementation typically involves identity providers, multi-factor authentication, and software-defined perimeters.",
+    "context": "Zero_Trust_Architecture_Guide.pdf, Chapter 1, pages 3-7"
+  },
+  {
+    "question": "What is the difference between data encryption at rest and in transit?",
+    "ground_truth": "Encryption at rest protects data stored on physical media (disks, databases, backups) using algorithms like AES-256. Encryption in transit protects data being transmitted over networks using protocols like TLS 1.3. Both are essential for defense-in-depth — at-rest encryption protects against physical theft or unauthorized server access, while in-transit encryption protects against network interception.",
+    "context": "Encryption_Standards_Reference.pdf, Sections 2.3 and 2.4, pages 18-22"
+  },
+  {
+    "question": "What triggers a mandatory PCI DSS compliance assessment?",
+    "ground_truth": "PCI DSS compliance is mandatory for any entity that stores, processes, or transmits cardholder data. Assessments are triggered by: processing over 6 million transactions annually (Level 1), processing 1-6 million transactions (Level 2), processing 20,000-1 million transactions (Level 3), or processing fewer than 20,000 transactions with no e-commerce (Level 4). Breaches also trigger mandatory reassessment regardless of transaction volume.",
+    "context": "PCI_DSS_Implementation_Guide.pdf, Section 1.1, pages 5-8"
+  },
+  {
+    "question": "What is the role of a Data Protection Officer (DPO) under GDPR?",
+    "ground_truth": "Under GDPR Article 37-39, a Data Protection Officer is required for public authorities, organizations that conduct large-scale systematic monitoring, or those processing special categories of data at scale. The DPO's responsibilities include advising on GDPR compliance, monitoring compliance programs, serving as the contact point for supervisory authorities, and informing staff about data protection obligations. The DPO must operate independently and report directly to the highest management level.",
+    "context": "GDPR_Regulation_2024.pdf, Articles 37-39, pages 28-32"
+  },
+  {
+    "question": "What is multi-factor authentication and why is it recommended?",
+    "ground_truth": "Multi-factor authentication (MFA) requires users to provide two or more verification factors: something they know (password/PIN), something they have (security key/token), or something they are (biometrics). MFA is recommended because it significantly reduces the risk of credential-based attacks — Microsoft reports that MFA blocks 99.9% of account compromise attacks. It protects against phishing, brute-force attacks, and credential stuffing.",
+    "context": "Authentication_Security_Guide.pdf, Section 3.1, pages 15-18"
+  },
+  {
+    "question": "What is an incident response plan and what are its key phases?",
+    "ground_truth": "An incident response plan (IRP) is a documented methodology for detecting, investigating, containing, and recovering from security incidents. The NIST framework defines four key phases: Preparation (establishing policies, tools, and team), Detection & Analysis (identifying and classifying incidents), Containment Eradication & Recovery (stopping the threat and restoring operations), and Post-Incident Activity (lessons learned, report generation, and plan updates).",
+    "context": "Incident_Response_Procedures.pdf, Chapter 2, pages 10-14"
+  }
+]
