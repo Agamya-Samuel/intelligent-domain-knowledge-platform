@@ -36,6 +36,8 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.49b0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
     "langfuse>=2.50.0",
+    # WebSocket support
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]
