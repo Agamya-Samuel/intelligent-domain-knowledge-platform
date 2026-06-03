@@ -26,8 +26,9 @@ dependencies = [
     "qdrant-client>=1.12.0",
     "sentence-transformers>=3.3.0",
     "openai>=1.60.0",
-    # Evaluation
-    "ragas>=0.2.0",
+    # Evaluation — LLM-as-judge metrics (RAGAS-compatible scoring)
+    # ragas is deferred due to langchain-community version conflicts;
+    # metrics are computed directly via the LLM endpoint.
     "datasets>=3.0.0",
     # Observability
     "opentelemetry-api>=1.29.0",
