@@ -86,6 +86,7 @@ export default function ChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [modelVariant, setModelVariant] = useState<"base" | "finetuned">("base");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -139,7 +140,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           query,
           session_id: activeSessionId,
-          model_variant: "base",
+          model_variant: modelVariant,
         }),
         signal: abortController.signal,
       });
@@ -249,7 +250,7 @@ export default function ChatPage() {
       setIsStreaming(false);
       abortControllerRef.current = null;
     }
-  }, [input, isStreaming, session, activeSessionId]);
+  }, [input, isStreaming, session, activeSessionId, modelVariant]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -288,6 +289,34 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* Model variant toggle */}
+      <div className="flex items-center justify-center gap-3 border-b px-6 py-2">
+        <span className={`text-xs ${modelVariant === "base" ? "font-semibold text-primary" : "text-muted-foreground"}`}>
+          Base
+        </span>
+        <button
+          type="button"
+          onClick={() => setModelVariant(modelVariant === "base" ? "finetuned" : "base")}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            modelVariant === "finetuned" ? "bg-primary" : "bg-muted"
+          }`}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+              modelVariant === "finetuned" ? "translate-x-4.5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+        <span className={`text-xs ${modelVariant === "finetuned" ? "font-semibold text-primary" : "text-muted-foreground"}`}>
+          Fine-tuned
+        </span>
+        {modelVariant === "finetuned" && (
+          <span className="ml-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+            FT
+          </span>
+        )}
+      </div>
+
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-3xl space-y-6">

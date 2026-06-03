@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     auth,
     budget,
     chat,
+    comparison,
     documents,
     evaluation,
     fine_tune,
@@ -24,4 +25,5 @@ router.include_router(models.router)
 router.include_router(budget.router)
 router.include_router(fine_tune.router)
 router.include_router(evaluation.router)
+router.include_router(comparison.router)
 router.include_router(ws.router)
