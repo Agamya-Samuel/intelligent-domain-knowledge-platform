@@ -65,6 +65,31 @@ class Settings(BaseSettings):
     RAG_MIN_SCORE: float = 0.5
     RAG_MAX_CONTEXT_TOKENS: int = 4096
 
+    # ── Advanced RAG (Phase 3 — Week 8-9) ─────────────────────────
+    # Hybrid retrieval
+    RAG_HYBRID_ENABLED: bool = True         # Enable BM25 + dense hybrid
+    RAG_BM25_TOP_K: int = 20               # BM25 candidates before fusion
+    RAG_DENSE_TOP_K: int = 20              # Dense candidates before fusion
+    RAG_RRF_K: int = 60                    # Reciprocal Rank Fusion constant
+
+    # Cross-encoder reranking
+    RAG_RERANKER_ENABLED: bool = True
+    RAG_RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    RAG_RERANKER_TOP_K: int = 5            # Final output after reranking
+
+    # Query expansion
+    RAG_HYDE_ENABLED: bool = True           # HyDE hypothetical answer expansion
+    RAG_MULTI_QUERY_ENABLED: bool = True    # Multi-query variant generation
+    RAG_MULTI_QUERY_COUNT: int = 3          # Number of query variants
+
+    # Context quality
+    RAG_CONTEXT_DEDUP_THRESHOLD: float = 0.95  # Cosine sim for near-dup removal
+    RAG_RELEVANCE_GATE_ENABLED: bool = True    # Self-RAG relevance scoring
+    RAG_RELEVANCE_GATE_THRESHOLD: float = 0.4  # Min relevance score to keep chunk
+
+    # Metadata filtering
+    RAG_METADATA_FILTERS_ENABLED: bool = True
+
     # ── LLM Inference (Modal vLLM) ────────────────────────────────
     LLM_BASE_URL: str = "http://localhost:8001"  # vLLM OpenAI-compatible endpoint
     LLM_MODEL: str = "Qwen/Qwen2.5-7B-Instruct"
