@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     # ── Budget ────────────────────────────────────────────────────
     BUDGET_MONTHLY_LIMIT: float = 30.00
 
+    # ── Evaluation / RAGAS ─────────────────────────────────────────
+    EVAL_LLM_BASE_URL: str = ""  # defaults to LLM_BASE_URL if empty
+    EVAL_LLM_MODEL: str = ""     # defaults to LLM_MODEL if empty
+    EVAL_LLM_API_KEY: str = "not-needed"
+    EVAL_MAX_CONCURRENCY: int = 3   # max parallel RAG pipeline calls during eval
+    EVAL_TIMEOUT_SECONDS: int = 300 # total timeout for a full evaluation run
+
 
 settings = Settings()
 

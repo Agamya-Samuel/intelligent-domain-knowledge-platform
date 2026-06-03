@@ -1,6 +1,6 @@
 """EvaluationRun model — RAGAS evaluation results for the RAG pipeline."""
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +16,11 @@ class EvaluationRun(Base, TimestampMixin):
         post_training        — After a fine-tuning job completes
         weekly_regression    — Scheduled regression check
         comparison           — A/B comparison between model variants
+        benchmark            — Model benchmarking across catalog models
+
+    Status lifecycle:
+        pending → running → completed
+        pending → running → failed
 
     Metrics stored as JSONB:
         {
@@ -24,6 +29,18 @@ class EvaluationRun(Base, TimestampMixin):
             "answer_relevance": 0.90,
             "context_recall": 0.85
         }
+
+    Per-sample scores stored as JSONB (list of dicts, one per eval question):
+        [
+            {
+                "question": "...",
+                "faithfulness": 0.95,
+                "context_relevance": 0.88,
+                "answer_relevance": 0.91,
+                "context_recall": 0.87
+            },
+            ...
+        ]
     """
 
     __tablename__ = "evaluation_runs"
@@ -37,7 +54,14 @@ class EvaluationRun(Base, TimestampMixin):
         String(30),
         nullable=False,
         index=True,
-        comment="baseline, post_training, weekly_regression, comparison",
+        comment="baseline, post_training, weekly_regression, comparison, benchmark",
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="pending",
+        index=True,
+        comment="pending, running, completed, failed",
     )
     model_id: Mapped[str | None] = mapped_column(
         String(100),
@@ -59,12 +83,36 @@ class EvaluationRun(Base, TimestampMixin):
     metrics: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,
-        comment="RAGAS metrics: faithfulness, context_relevance, answer_relevance, context_recall",
+        default=dict,
+        comment=(
+            "RAGAS aggregate metrics: faithfulness, context_relevance, "
+            "answer_relevance, context_recall"
+        ),
+    )
+    per_sample_scores: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Per-question RAGAS scores for detailed analysis",
+    )
+    benchmark_config: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Benchmark parameters: model list, dataset config, comparison settings",
     )
     dataset_size: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Number of question-answer pairs in the eval dataset",
+    )
+    duration_seconds: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Total wall-clock time for the evaluation run in seconds",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Error details if the evaluation run failed",
     )
     s3_report_path: Mapped[str | None] = mapped_column(
         String(500),
@@ -80,5 +128,5 @@ class EvaluationRun(Base, TimestampMixin):
     def __repr__(self) -> str:
         return (
             f"<EvaluationRun id={self.id!r} type={self.run_type!r} "
-            f"model={self.model_id!r}>"
+            f"status={self.status!r} model={self.model_id!r}>"
         )
