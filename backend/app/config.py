@@ -72,5 +72,44 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = 0.3
     LLM_STREAM: bool = True
 
+    # ── Budget ────────────────────────────────────────────────────
+    BUDGET_MONTHLY_LIMIT: float = 30.00
+
 
 settings = Settings()
+
+
+# ── Model Catalog (static configuration — TRD §4.2) ───────────────
+MODEL_CATALOG: list[dict] = [
+    # Tier 0 — Compact
+    {"id": "qwen2.5-7b", "name": "Qwen 2.5 7B-Instruct", "tier": 0, "size": "7B",
+     "gpu": "A10G", "vram_gb": 6.5, "est_cost": 2.0, "est_time_min": 30,
+     "license": "Apache 2.0", "available": True, "quality_rating": 0.75},
+    {"id": "gemma4-e4b", "name": "Gemma 4 E4B", "tier": 0, "size": "4B",
+     "gpu": "A10G", "vram_gb": 5.0, "est_cost": 1.0, "est_time_min": 20,
+     "license": "Gemma", "available": True, "quality_rating": 0.70},
+    # Tier 1 — Standard (Primary)
+    {"id": "qwen2.5-14b", "name": "Qwen 2.5 14B-Instruct", "tier": 1, "size": "14B",
+     "gpu": "A10G", "vram_gb": 8.5, "est_cost": 3.5, "est_time_min": 60,
+     "license": "Apache 2.0", "available": True, "quality_rating": 0.85},
+    {"id": "ministral3-14b", "name": "Mistral Ministral 3 14B-Instruct", "tier": 1, "size": "14B",
+     "gpu": "A10G", "vram_gb": 9.0, "est_cost": 4.0, "est_time_min": 65,
+     "license": "Apache 2.0", "available": True, "quality_rating": 0.83},
+    {"id": "deepseek-r1-14b", "name": "DeepSeek-R1 Distill Qwen 14B", "tier": 1, "size": "14B",
+     "gpu": "A10G", "vram_gb": 8.5, "est_cost": 3.5, "est_time_min": 55,
+     "license": "MIT", "available": True, "quality_rating": 0.84},
+    # Tier 2 — Enhanced
+    {"id": "qwen2.5-32b", "name": "Qwen 2.5 32B-Instruct", "tier": 2, "size": "32B",
+     "gpu": "L40S", "vram_gb": 24.0, "est_cost": 12.0, "est_time_min": 90,
+     "license": "Apache 2.0", "available": True, "quality_rating": 0.92},
+    {"id": "gemma4-31b", "name": "Gemma 4 31B", "tier": 2, "size": "31B",
+     "gpu": "L40S", "vram_gb": 26.0, "est_cost": 14.0, "est_time_min": 100,
+     "license": "Gemma", "available": True, "quality_rating": 0.90},
+    # Tier 3 — Maximum
+    {"id": "qwen2.5-72b", "name": "Qwen 2.5 72B-Instruct", "tier": 3, "size": "72B",
+     "gpu": "A100-80GB", "vram_gb": 41.0, "est_cost": 28.0, "est_time_min": 180,
+     "license": "Apache 2.0", "available": True, "quality_rating": 0.96},
+    {"id": "llama3.3-70b", "name": "Llama 3.3 70B-Instruct", "tier": 3, "size": "70B",
+     "gpu": "A100-80GB", "vram_gb": 40.0, "est_cost": 25.0, "est_time_min": 170,
+     "license": "Llama 3.3", "available": True, "quality_rating": 0.95},
+]
