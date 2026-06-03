@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -501,6 +502,9 @@ export default function FineTunePage() {
             <Button variant="outline" onClick={handleReset}>
               Start Another Job
             </Button>
+            <Link href={`/fine-tune/${ftResult.job_id}`}>
+              <Button variant="outline">View Job Details</Button>
+            </Link>
             <Button variant="outline" onClick={() => window.location.assign("/models")}>
               Back to Models
             </Button>
