@@ -3,10 +3,10 @@
 
 ---
 
-> **Document Version:** 1.0
-> **Date:** June 3, 2026
-> **Timeline:** 12 Weeks (June 16 – September 5, 2026)
-> **Parent Documents:** PID v1.3, TRD v1.0
+> **Document Version:** 1.0 
+> **Date:** June 3, 2026    
+> **Timeline:** 12 Weeks (June 16 – September 5, 2026)  
+> **Parent Documents:** PID v1.3, TRD v1.0  
 > **Team:** 2 ML Engineers, 2 Backend Engineers, 1 DevOps/MLOps Engineer
 
 ---

@@ -4,10 +4,10 @@
 
 ---
 
-> **Document Version:** 1.3
-> **Date:** June 3, 2026
-> **Status:** Draft — Awaiting Stakeholder Approval
-> **Prepared By:** Project Initiation Team
+> **Document Version:** 1.3 
+> **Date:** June 3, 2026    
+> **Status:** Draft — Awaiting Stakeholder Approval 
+> **Prepared By:** Project Initiation Team  
 > **Classification:** Internal / Confidential   
 
 ---
