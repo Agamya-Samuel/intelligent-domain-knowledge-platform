@@ -6,11 +6,14 @@ Handles the full document lifecycle:
   2. Document parsing (via document_parser)
   3. Text chunking (via document_chunker)
   4. Chunk persistence to PostgreSQL
-  5. Status management
+  5. Embedding generation and vector upsert to Qdrant
+  6. Status management
 """
 
 import logging
+import uuid
 
+from qdrant_client.models import PointStruct
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +26,17 @@ from app.services.document_parser import (
     get_file_extension,
     parse_document,
     validate_file_type,
+)
+from app.services.rag.embeddings import embed_texts
+from app.services.rag.vector_store import (
+    FIELD_CHUNK_INDEX,
+    FIELD_CHUNK_TEXT,
+    FIELD_CONTENT_HASH,
+    FIELD_DOCUMENT_ID,
+    FIELD_DOCUMENT_TYPE,
+    FIELD_PAGE_NUMBER,
+    FIELD_SOURCE_FILE,
+    get_qdrant_store,
 )
 
 logger = logging.getLogger(__name__)
@@ -167,7 +181,19 @@ async def delete_document(
     Delete a document and all its chunks.
 
     Chunks are cascade-deleted via the FK relationship.
+    Also removes corresponding vectors from Qdrant.
     """
+    # Delete vectors from Qdrant (best-effort)
+    try:
+        store = await get_qdrant_store()
+        await store.delete_by_document(document.id)
+        logger.info("Deleted Qdrant vectors for document %s", document.id)
+    except Exception:
+        logger.exception(
+            "Failed to delete Qdrant vectors for document %s (non-fatal)",
+            document.id,
+        )
+
     await db.delete(document)
     await db.flush()
 
@@ -248,6 +274,7 @@ async def process_document(
         await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
 
         # Step 4: Persist new chunks
+        db_chunks: list[DocumentChunk] = []
         for chunk in chunks:
             db_chunk = DocumentChunk(
                 id=generate_uuid(),
@@ -259,8 +286,14 @@ async def process_document(
                 metadata_=chunk.metadata,
             )
             db.add(db_chunk)
+            db_chunks.append(db_chunk)
 
-        # Step 5: Update document status
+        await db.flush()
+
+        # Step 5: Embed chunks and upsert to Qdrant
+        await _embed_and_upsert_chunks(document, chunks, db_chunks)
+
+        # Step 6: Update document status
         document.status = "completed"
         document.chunk_count = len(chunks)
         document.processing_error = None
@@ -287,6 +320,94 @@ async def process_document(
         await db.flush()
         logger.exception("Failed to process document %s", document.id)
         raise
+
+
+# ── Embedding & Vector Upsert ───────────────────────────────────────
+
+
+async def _embed_and_upsert_chunks(
+    document: Document,
+    chunks: list,
+    db_chunks: list[DocumentChunk],
+    *,
+    batch_size: int = 64,
+) -> None:
+    """
+    Embed document chunks and upsert vectors to Qdrant.
+
+    Runs in best-effort mode — if Qdrant is unavailable, processing still
+    completes (chunks are stored in PostgreSQL). A warning is logged so
+    operators know re-embedding is needed.
+
+    Args:
+        document: The document ORM record.
+        chunks: TextChunk objects from the chunker.
+        db_chunks: The persisted DocumentChunk ORM objects (with IDs).
+        batch_size: Number of chunks to embed per batch.
+    """
+    if not chunks:
+        return
+
+    try:
+        store = await get_qdrant_store()
+
+        # Delete existing vectors for this document (in case of reprocessing)
+        await store.delete_by_document(document.id)
+
+        # Embed chunks in batches
+        all_points: list[PointStruct] = []
+        for offset in range(0, len(chunks), batch_size):
+            batch = chunks[offset : offset + batch_size]
+            batch_db = db_chunks[offset : offset + batch_size]
+            texts = [c.content for c in batch]
+            embeddings = embed_texts(texts)
+
+            for chunk_obj, db_chunk, embedding in zip(batch, batch_db, embeddings):
+                page_num = chunk_obj.metadata.get("page_num")
+                point_id = _uuid_to_int(db_chunk.id)
+
+                payload = {
+                    FIELD_DOCUMENT_ID: document.id,
+                    FIELD_SOURCE_FILE: document.file_name,
+                    FIELD_DOCUMENT_TYPE: document.file_type,
+                    FIELD_PAGE_NUMBER: page_num,
+                    FIELD_CHUNK_INDEX: chunk_obj.index,
+                    FIELD_CONTENT_HASH: chunk_obj.content_hash,
+                    FIELD_CHUNK_TEXT: chunk_obj.content,
+                }
+
+                all_points.append(
+                    PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload=payload,
+                    )
+                )
+
+        # Upsert all points to Qdrant
+        await store.upsert_points(all_points)
+
+        logger.info(
+            "Embedded and upserted %d chunks for document %s to Qdrant",
+            len(chunks),
+            document.id,
+        )
+
+    except Exception:
+        logger.exception(
+            "Failed to embed/upsert chunks for document %s to Qdrant "
+            "(non-fatal, chunks stored in PG)",
+            document.id,
+        )
+        # Don't raise — document processing still succeeds in PostgreSQL
+
+
+def _uuid_to_int(uuid_str: str) -> int:
+    """Convert a UUID string to a positive int for Qdrant point IDs."""
+    return uuid.UUID(uuid_str).int % (2**63 - 1)
+
+
+# ── Chunk Retrieval ─────────────────────────────────────────────────
 
 
 async def get_document_chunks(
