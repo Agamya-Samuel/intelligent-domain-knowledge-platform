@@ -27,15 +27,13 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync --all-extras
       - name: Ruff lint
-        run: ruff check app/
+        run: uv run ruff check app/
       - name: Ruff format check
-        run: ruff format --check app/
+        run: uv run ruff format --check app/
 
   # ============================================================
   lint-frontend:
@@ -79,16 +77,14 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync --all-extras
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://idkp:idkp_secret@localhost:5432/idkp
           AUTH_SECRET: ci-test-secret
-        run: python -m pytest tests/ -v
+        run: uv run pytest tests/ -v
 
   # ============================================================
   build:
