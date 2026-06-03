@@ -48,5 +48,11 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST: str = "http://localhost:3001"
 
+    # ── Document Ingestion ───────────────────────────────────────
+    UPLOAD_MAX_FILE_SIZE_MB: int = 50
+    UPLOAD_CHUNK_SIZE: int = 1000
+    UPLOAD_CHUNK_OVERLAP: int = 200
+    SUPPORTED_FILE_TYPES: str = ".pdf,.txt,.md,.docx"
+
 
 settings = Settings()
