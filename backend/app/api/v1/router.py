@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    analytics,
     auth,
     budget,
     chat,
@@ -27,3 +28,4 @@ router.include_router(fine_tune.router)
 router.include_router(evaluation.router)
 router.include_router(comparison.router)
 router.include_router(ws.router)
+router.include_router(analytics.router)
