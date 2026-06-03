@@ -6,6 +6,7 @@ const navItems = [
   { href: "/chat", label: "Chat", icon: "💬" },
   { href: "/datasets", label: "Datasets", icon: "📁" },
   { href: "/models", label: "Models", icon: "🤖" },
+  { href: "/fine-tune", label: "Fine-tune", icon: "🔧" },
 ] as const;
 
 /**
