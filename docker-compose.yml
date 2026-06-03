@@ -1,0 +1,105 @@
+# IDKP Docker Compose — Development Stack
+# Services: PostgreSQL 16, Redis 7, Langfuse 2, Nginx
+# Frontend (Next.js :3000) and Backend (FastAPI :8000) run on the host.
+
+services:
+  # ============================================================
+  # PostgreSQL 16 — shared by app and Langfuse (separate databases)
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: idkp-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-idkp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-idkp_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-idkp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-idkp} -d ${POSTGRES_DB:-idkp}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - idkp-net
+
+  # ============================================================
+  # Redis 7 — caching, rate limiting, session store
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: idkp-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - idkp-net
+
+  # ============================================================
+  # Langfuse 2 — self-hosted LLM observability
+  # ============================================================
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: idkp-langfuse
+    restart: unless-stopped
+    ports:
+      - "${LANGFUSE_PORT:-3001}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-idkp}:${POSTGRES_PASSWORD:-idkp_secret}@postgres:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-langfuse-dev-secret-change-in-prod}
+      NEXTAUTH_URL: http://localhost:${LANGFUSE_PORT:-3001}
+      SALT: ${LANGFUSE_SALT:-langfuse-dev-salt-change-in-prod}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/public/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - idkp-net
+
+  # ============================================================
+  # Nginx — reverse proxy (routes /api/* and /ws/* to FastAPI)
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    container_name: idkp-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - idkp-net
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  idkp-net:
+    driver: bridge
