@@ -4,7 +4,7 @@
 
 ---
 
-> **Document Version:** 1.1   
+> **Document Version:** 1.2   
 > **Date:** June 3, 2026      
 > **Status:** Draft — Awaiting Stakeholder Approval   
 > **Prepared By:** Project Initiation Team      
@@ -80,9 +80,10 @@ The proposed solution is a two-layer architecture that separates **what the mode
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    LAYER 1 — FINE-TUNED LLM                     │
-│  Base: Llama 3.1 8B / Mistral 7B  |  Method: QLoRA (4-bit)      │
+│  Primary: Qwen 2.5 14B-Instruct  |  Method: QLoRA (4-bit)      │
+│  Tier 0-3 candidates: 7B → 72B   |  GPU: A10G–A100 on Modal   │
 │  Trains on: domain Q&A pairs, document summaries, reasoning     │
-│  cadence: one-time + periodic re-tune (monthly or on drift)     │
+│  cadence: one-time + periodic re-tune (budget permitting)       │
 └─────────────────────────────────────────────────────────────────┘
                               ▲
                      Augmented prompt
@@ -111,18 +112,21 @@ The proposed solution is a two-layer architecture that separates **what the mode
 
 | Component | Selected Technology | Rationale |
 |---|---|---|
-| **Base LLM** | Llama 3.1 8B-Instruct or Mistral 7B-Instruct | Strong instruction following; Apache 2.0 / MIT licensed |
-| **Fine-tuning method** | QLoRA via PEFT + Unsloth | 4-bit quantization; single 24GB GPU sufficient |
+| **Base LLM (Tier 1 — primary)** | Qwen 2.5 14B-Instruct, Mistral Ministral 3 14B-Instruct, DeepSeek-R1 Distill Qwen 14B | Strong reasoning across all domains; Apache 2.0 / MIT; fits on A10G (24 GB) with QLoRA |
+| **Base LLM (Tier 0 — compact)** | Qwen 2.5 7B-Instruct, Gemma 4 E4B | Fastest training/inference; good baseline for RAG |
+| **Base LLM (Tier 2 — enhanced)** | Qwen 2.5 32B-Instruct, Gemma 4 31B, DeepSeek-R1 Distill Qwen 32B | Near-70B quality at half the VRAM; requires L40S or A100-40GB |
+| **Base LLM (Tier 3 — maximum)** | Qwen 2.5 72B-Instruct, Llama 3.3 70B-Instruct | Maximum quality; requires A100-80GB; limited to 0-1 FT runs/month on $30 budget |
+| **Fine-tuning method** | QLoRA via PEFT + Unsloth | 4-bit quantization; 70% less VRAM; 2x faster training |
 | **Embedding model** | BGE-M3 or E5-Large-v2 | State-of-the-art open-source retrieval embeddings |
 | **Sparse retrieval** | BM25 (via Elasticsearch / OpenSearch or BM25s) | Exact token matching for IDs, codes, names |
 | **Vector database** | Qdrant or Weaviate | OSS-first; production-grade; metadata filtering support |
 | **Reranker** | BGE-Reranker-v2-m3 (Cross-Encoder) | Token-level late interaction; 30%+ relevance gains on hybrid results |
 | **Orchestration** | LlamaIndex + LangChain | Modular; 300+ integrations; agent workflow support |
 | **Document processing** | MarkItDown (Microsoft) + Tree-sitter | Unified conversion for 10+ formats (PDF, DOCX, PPTX, XLSX, HTML, Images/OCR, Audio, EPub, CSV/JSON/XML); Tree-sitter retained for deep code parsing |
-| **GPU compute (fine-tuning)** | Modal.com (serverless A10G/A100) | Pay-per-second billing; scale-to-zero; no GPU procurement delays; $30 free tier sufficient for development |
-| **GPU compute (inference)** | Modal.com (serverless A10G with hybrid keep-warm) | Cold-start for off-hours; keep-warm during business hours; 80–90% cost reduction vs. always-on |
+| **GPU compute (fine-tuning)** | Modal.com (serverless A10G / L40S / A100-80GB) | Pay-per-second billing; scale-to-zero; GPU tier matched to model tier; $30 free tier sufficient for development |
+| **GPU compute (inference)** | Modal.com (serverless A10G, full scale-to-zero) | Full scale-to-zero at < 100 queries/day; cold start ~30s acceptable; ~$2-5/month inference cost |
 | **LLM serving** | vLLM | High-throughput, low-latency open-source inference server |
-| **Evaluation** | RAGAS | RAG Triad: context relevance, groundedness, answer relevance |
+| **Evaluation** | RAGAS + custom domain benchmark | RAG Triad + domain-specific Q&A + cost/latency benchmarks |
 | **Monitoring** | OpenTelemetry + Langfuse | OSS tracing and observability |
 | **Chat UI** | Chainlit or Open WebUI | Production-ready OSS chatbot interfaces |
 
@@ -155,14 +159,16 @@ The same backend serves three stated use cases — public chatbot, internal comp
 
 | Cost Category | One-time | Monthly (recurring) |
 |---|---|---|
-| GPU compute — fine-tuning (Modal.com serverless A10G) | ~$1–$10 per training run | ~$5–$50 (periodic re-tune) |
-| GPU compute — inference (Modal.com serverless A10G) | — | ~$100–$300 (hybrid keep-warm/scale-to-zero) |
-| GPU compute — storage (Modal Volume, ~7 GB) | — | ~$0.63 (persistent model storage) |
+| GPU compute — fine-tuning (Modal.com, A10G or L40S) | ~$2–$15 per training run (model-tier dependent) | ~$5–$25 (from free credits; 1-10 runs depending on model tier) |
+| GPU compute — inference (Modal.com, full scale-to-zero) | — | ~$2–$5 (at < 100 queries/day; no keep-warm) |
+| GPU compute — embeddings (Modal.com T4, on-demand) | — | ~$0.5–$1 (on ingestion events only) |
+| GPU compute — storage (Modal Volume, ~7–15 GB) | — | ~$0.63–$1.35 (persistent model + adapter storage) |
+| **Total Modal.com GPU spend** | — | **~$3–$7/month (well within $30 free credits)** |
 | Vector database hosting (Qdrant self-hosted) | Setup effort | ~$50–$200 (storage + ops) |
 | Engineering (ML + Backend + DevOps) | ~3–4 FTE × 12 weeks | ~0.5–1 FTE ongoing |
 | Evaluation and QA dataset creation | ~2–4 weeks of effort | Periodic |
 
-> Note: Figures are indicative and depend heavily on infrastructure choices (cloud vs on-prem), team seniority, and document volume growth.
+> **Note:** At < 100 queries/day with full scale-to-zero, inference costs are negligible (~$2–5/month). The $30/month free credits are sufficient for all GPU compute (fine-tuning + inference + embeddings + storage) with significant headroom for iterative model development. Remaining ~$23–27/month is allocated to fine-tuning runs, enabling 5–12 runs/month at Tier 1 (14B) on A10G.
 
 ### 1.5.2 Cost of Inaction
 
@@ -189,10 +195,12 @@ The same backend serves three stated use cases — public chatbot, internal comp
 | Fine-tuning data quality is poor | Medium | High | Invest in Q&A pair curation; use RAGAS evaluation to catch regressions early |
 | Real-time ingestion pipeline latency too high | Medium | Medium | Use event-driven ingestion (webhook/watch); set SLA at < 5 min per document change |
 | Retrieval precision insufficient for legal/compliance queries | Medium | High | Add metadata filters, cross-encoder reranking, and Self-RAG verification step |
-| GPU cold start adds latency to first inference request | Medium | Medium | Use hybrid keep-warm during business hours (08:00–18:00); accept cold start (~30s) for off-hours and dev environments |
+| GPU cold start adds latency to first inference request | Low | Low | Full scale-to-zero is default at < 100 queries/day; cold start (~30s) acceptable for low-traffic deployment; keep-warm can be added in future phase if latency tightens |
 | Modal.com pricing changes or service disruption | Low | Medium | Maintain infrastructure abstraction layer; fallback plan to traditional cloud GPU (AWS/GCP) |
 | Scope creep (multi-language, new modalities beyond MarkItDown scope) | High | Medium | Lock scope statement before sprint 1; defer to v2 roadmap |
 | Model drift after domain corpus changes significantly | Low | High | Set up automated RAGAS evaluation; schedule re-tune trigger on drift threshold |
+| Selected model tier too large for $30 budget, limiting iteration cycles | Medium | Medium | Start at Tier 1 (14B); Phase 2 Evaluation Gate includes cost/latency analysis; downgrade path to Tier 0 is low-cost and fast |
+| MoE models (Llama 4 Scout, Qwen 3.5 MoE) entice but require multi-GPU | Low | Low | Explicitly excluded from v1 model candidates; defer to v2 if budget increases |
 
 ---
 
@@ -231,7 +239,7 @@ Document ingestion is unified through **MarkItDown** (Microsoft), supporting 10+
 
 The system uses a two-layer architecture:
 
-1. **Fine-tuned LLM layer** — A Llama 3.1 8B or Mistral 7B model, adapted to the domain using QLoRA fine-tuning on curated question-answer pairs derived from the document corpus. This gives the model deep fluency in domain vocabulary, output formats, and reasoning patterns.
+1. **Fine-tuned LLM layer** — A 7B–32B parameter model selected from the candidate pool (Qwen 2.5, Gemma 4, Mistral Ministral 3, DeepSeek-R1 distills) via a structured Phase 2 Model Evaluation Gate. The selected model is adapted to the domain using QLoRA fine-tuning on curated question-answer pairs derived from the document corpus, giving the model deep fluency in domain vocabulary, output formats, and reasoning patterns across legal, healthcare, finance, technology, internal, and education domains.
 
 2. **Advanced RAG layer** — A real-time retrieval pipeline that ingests document updates, indexes them using hybrid sparse + dense search, reranks retrieved chunks using a cross-encoder model, and injects grounded, page-level citations into the generated response.
 
@@ -241,6 +249,7 @@ The system uses a two-layer architecture:
 
 | # | Objective | Measurable Success Criterion |
 |---|---|---|
+| O-01a | Model selection completed via structured benchmark | Phase 2 Evaluation Gate: ≥ 2 candidate models benchmarked across RAGAS triad, domain-specific Q&A, and cost/latency; winner selected with documented rationale |
 | O-01 | Domain-adapted LLM deployed | Fine-tuned model outperforms base model by ≥ 15% on domain eval benchmark |
 | O-02 | Real-time document ingestion pipeline operational | New/updated documents indexed within ≤ 5 minutes of change |
 | O-03 | Advanced RAG pipeline deployed with hybrid retrieval and reranking | Retrieval Precision@5 ≥ 85% on held-out evaluation set |
@@ -266,8 +275,9 @@ The system uses a two-layer architecture:
 
 ### Phase 2 — Fine-tuning (Weeks 5–7)
 
-- Fine-tuning dataset prepared (instruction-tuning format from domain Q&A pairs and document summaries)
-- QLoRA training run executed on **Modal.com** (A10G GPU, serverless) using selected base model (Llama 3.1 8B or Mistral 7B)
+- Model Evaluation Gate: benchmark ≥ 2 candidate models across RAGAS triad, domain-specific Q&A (≥ 50 held-out pairs across all target domains), and cost/latency metrics; select winning model with documented rationale
+- Fine-tuning dataset prepared (instruction-tuning format from domain Q&A pairs and document summaries, including ~5–10% general-domain examples to prevent catastrophic forgetting)
+- QLoRA training run executed on **Modal.com** (GPU tier matched to selected model: A10G for Tier 0-1, L40S for Tier 2, A100-80GB for Tier 3)
 - LoRA adapter evaluated against baseline; domain benchmark report produced
 - LoRA adapter persisted to Modal Volume for persistent storage across runs
 - Model served via vLLM on Modal with LoRA adapter hot-loading support
@@ -292,14 +302,13 @@ The system uses a two-layer architecture:
 
 ### Phase 5 — Deployment & Monitoring (Week 12)
 
-- Production infrastructure provisioned on Modal.com (serverless inference, embedding functions, ingestion workers)
-- Hybrid keep-warm/scale-to-zero schedule configured (keep-warm 08:00–18:00 business hours; scale-to-zero off-hours)
+- Production infrastructure provisioned on Modal.com (serverless inference, embedding functions, ingestion workers; full scale-to-zero — no keep-warm for v1)
 - CI/CD pipeline for document ingestion (trigger on file change / DB event)
 - Automated re-indexing on document update via MarkItDown conversion pipeline
 - OpenTelemetry tracing + Langfuse dashboard live (including Modal function metrics)
 - Automated RAGAS regression testing on weekly eval batch
 - Runbooks: Modal deployment, reindexing, model re-tune trigger, rollback procedures
-- Modal cost monitoring dashboard with budget alerts (80% threshold)
+- Modal cost monitoring dashboard with budget alerts (80% of $30 threshold = $24)
 - Stakeholder handover and demo
 
 ---
@@ -310,7 +319,10 @@ The system uses a two-layer architecture:
 
 | Component | Technology | License |
 |---|---|---|
-| Base LLM | Llama 3.1 8B-Instruct | Meta Llama 3.1 Community License |
+| **Base LLM (Tier 0 — Compact)** | Qwen 2.5 7B-Instruct, Gemma 4 E4B, DeepSeek-R1 Distill Qwen 7B | Apache 2.0 / Gemma / MIT |
+| **Base LLM (Tier 1 — Standard)** ⭐ Primary | Qwen 2.5 14B-Instruct, Mistral Ministral 3 14B-Instruct, DeepSeek-R1 Distill Qwen 14B | Apache 2.0 / MIT |
+| **Base LLM (Tier 2 — Enhanced)** | Qwen 2.5 32B-Instruct, Gemma 4 31B, DeepSeek-R1 Distill Qwen 32B | Apache 2.0 / Gemma / MIT |
+| **Base LLM (Tier 3 — Maximum)** | Qwen 2.5 72B-Instruct, Llama 3.3 70B-Instruct | Apache 2.0 / Llama 3.3 |
 | Fine-tuning framework | Unsloth + PEFT (QLoRA) | Apache 2.0 |
 | LLM inference | vLLM (on Modal.com) | Apache 2.0 |
 | Embedding model | BGE-M3 | MIT |
@@ -320,10 +332,12 @@ The system uses a two-layer architecture:
 
 | Component | Technology | Pricing Model |
 |---|---|---|
-| Fine-tuning GPU | Modal.com A10G (24 GB VRAM) | ~$1.10/hr, pay-per-second, scale-to-zero |
-| Inference GPU | Modal.com A10G (hybrid keep-warm) | ~$1.10/hr active; $0 idle (scale-to-zero) |
-| Embedding GPU | Modal.com T4 (16 GB VRAM) | ~$0.60/hr, on-demand for ingestion |
-| Persistent storage | Modal Volume | $0.09/GB/month (~7 GB for model + adapter) |
+| Fine-tuning GPU (Tier 0–1) | Modal.com A10G (24 GB VRAM) | ~$1.10/hr, pay-per-second, scale-to-zero |
+| Fine-tuning GPU (Tier 2) | Modal.com L40S (48 GB VRAM) | ~$1.95/hr, pay-per-second, scale-to-zero |
+| Fine-tuning GPU (Tier 3) | Modal.com A100-80GB (80 GB VRAM) | ~$2.50/hr, pay-per-second, scale-to-zero |
+| Inference GPU | Modal.com A10G (full scale-to-zero) | ~$1.10/hr active; $0 idle |
+| Embedding GPU | Modal.com T4 (16 GB VRAM) | ~$0.59/hr, on-demand for ingestion |
+| Persistent storage | Modal Volume | $0.09/GB/month (~7–15 GB for model + adapter) |
 | SDK | Modal Python SDK | MIT |
 
 ### Retrieval & Storage
@@ -403,13 +417,13 @@ Week  1  2  3  4  5  6  7  8  9  10  11  12
 
 ## 2.8 Key Assumptions
 
-- **Modal.com** account with $30 free credits is available; additional credits purchasable at $0.000306/sec (A10G) — sufficient for all fine-tuning runs and low-to-moderate traffic inference
+- **Modal.com** account with $30/month free credits is available. At the projected query volume of < 100 queries/day with full scale-to-zero, total GPU compute costs (fine-tuning + inference + embeddings + storage) are estimated at ~$3–$7/month — well within free credits. The remaining ~$23–$27/month headroom is allocated to iterative fine-tuning runs
 - GPU compute via Modal.com (A10G, 24 GB VRAM) is provisionable within Week 1 via serverless functions — no hardware procurement required
 - Domain experts are available to curate a minimum of 200 high-quality Q&A evaluation pairs in Phase 1
 - Document sources (PDFs, Office files, Markdown, HTML, images, code repositories, DB records) are accessible to the engineering team from the start of Phase 1
 - The team has working proficiency in Python, PyTorch, Hugging Face ecosystem, and Modal SDK
 - No multi-language requirement in v1 (English only)
-- Modal cold start (~30s) is acceptable for off-hours and first-query scenarios; keep-warm containers used during business hours to meet P95 latency SLA
+- Modal cold start (~30s for model loading) is acceptable for all deployment targets at < 100 queries/day; full scale-to-zero is the default inference strategy for v1 (no keep-warm schedule)
 
 ---
 
@@ -420,10 +434,12 @@ Week  1  2  3  4  5  6  7  8  9  10  11  12
 | Retrieval Precision@5 | ≥ 85% | RAGAS / custom eval harness |
 | Answer Faithfulness | ≥ 0.90 | RAGAS faithfulness metric |
 | Citation Accuracy | ≥ 95% | Manual spot-check + automated page-reference validation |
-| Response Latency (P95) | ≤ 3 seconds | Load test + production monitoring |
+| Response Latency (P95) | ≤ 3 seconds (warm) / ≤ 30 seconds (cold start) | Load test + production monitoring |
 | Document Ingestion Latency | ≤ 5 minutes | Ingestion pipeline monitoring |
 | Fine-tuned model lift over base | ≥ 15% | Domain benchmark (held-out eval set) |
-| Modal GPU cost efficiency | ≤ $300/month (hybrid schedule) | Modal usage dashboard + cost alerts |
+| Cost per query (inference) | ≤ $0.01 | Modal usage dashboard / custom tracking |
+| Cold-start latency | ≤ 30 seconds | Load test + Modal cold-start metrics |
+| Modal GPU cost efficiency | ≤ $30/month total (within free credits) | Modal usage dashboard + cost alerts (80% threshold = $24) |
 | System uptime | ≥ 99.5% (business hours) | Infrastructure monitoring |
 
 ---
@@ -463,14 +479,40 @@ Document conversion is unified through **MarkItDown** (Microsoft), providing a s
 
 ### 3.2.2 Fine-tuning Pipeline
 
-- **Base model selection**: Llama 3.1 8B-Instruct or Mistral 7B-Instruct (evaluated and chosen in Phase 2)
-- **QLoRA fine-tuning** using PEFT + Unsloth on curated domain instruction-tuning dataset, executed on **Modal.com** serverless GPU infrastructure (A10G, 24 GB VRAM)
-- Fine-tuning dataset construction from: domain Q&A pairs, document summaries, multi-document reasoning examples, citation-format examples
-- LoRA adapter training, checkpointing, and evaluation via Modal Functions with explicit GPU type selection (`gpu="A10G"`)
+- **Model Evaluation Gate (Phase 2, Week 5):** A structured model selection process benchmarks ≥ 2 candidate models across three dimensions:
+  1. **RAGAS Quality:** Faithfulness ≥ 0.90, context relevance ≥ 0.85, answer relevance ≥ 0.85
+  2. **Domain-Specific Benchmark:** Performance on ≥ 50 held-out domain Q&A pairs (manually curated across all target domains: legal, healthcare, finance, technology, internal company knowledge, education)
+  3. **Cost/Latency:** Fine-tuning cost per run, inference latency (P95), and monthly total GPU cost estimate
+- **Base model selection:** Model chosen from the candidate pool via the Phase 2 Model Evaluation Gate (see §3.2.2a). Default tier is Tier 1 (14B class), upgradeable to Tier 2 (27–32B) if evaluation justifies and $30 budget permits. Downgrade to Tier 0 (7–9B) if cost or latency constraints require
+- **QLoRA fine-tuning** using PEFT + Unsloth on curated domain instruction-tuning dataset, executed on **Modal.com** serverless GPU infrastructure (GPU tier matched to selected model)
+- Fine-tuning dataset construction from: domain Q&A pairs, document summaries, multi-document reasoning examples, citation-format examples, plus ~5–10% general-domain examples to prevent catastrophic forgetting
+- LoRA adapter training, checkpointing, and evaluation via Modal Functions with explicit GPU type selection (`gpu="A10G"`, `gpu="L40S"`, or `gpu="A100-80GB"` as appropriate)
 - **Modal Volume** persistence: base model and LoRA adapter stored on persistent volume to avoid re-download on cold starts
 - Function timeouts enforced (`timeout=600`) to prevent runaway costs from bugs
 - Domain benchmark evaluation report comparing fine-tuned vs base model
 - Adapter merging and serving setup via vLLM on Modal with LoRA hot-loading support
+
+### 3.2.2a Model Tier Selection Framework
+
+The IDKP supports a tiered model selection strategy, allowing the team to choose the optimal model size based on quality requirements, budget constraints, and latency targets. All tiers use QLoRA (4-bit) fine-tuning via Unsloth + PEFT.
+
+| Tier | Model Sizes | Modal GPU | QLoRA VRAM | Est. FT Cost/Run | FT Runs on $25/mo | Inference (scale-to-zero) |
+|---|---|---|---|---|---|---|
+| **Tier 0 — Compact** | 7–9B (Qwen 2.5 7B, Gemma 4 E4B) | A10G (24 GB) | 5–6.5 GB | $1–$3 | 8–25 runs/mo | Fastest cold start (~15s) |
+| **Tier 1 — Standard** ⭐ | 14B (Qwen 2.5 14B, Ministral 3 14B, DeepSeek-R1 Distill 14B) | A10G (24 GB) | 8.5 GB | $2–$5 | 5–12 runs/mo | ~30s cold start |
+| **Tier 2 — Enhanced** | 27–32B (Qwen 2.5 32B, Gemma 4 31B, DeepSeek-R1 Distill 32B) | L40S (48 GB) | 22–26 GB | $8–$16 | 2–3 runs/mo | ~45s cold start |
+| **Tier 3 — Maximum** | 70B (Qwen 2.5 72B, Llama 3.3 70B) | A100-80GB (80 GB) | 41 GB | $20–$35 | 0–1 run/mo | ~60s cold start |
+
+> **Default:** Tier 1 (14B) is the recommended starting point, offering the best quality-to-cost ratio. The Phase 2 Model Evaluation Gate determines whether to stay at Tier 1, downgrade to Tier 0 (if latency is critical), or upgrade to Tier 2 (if quality justifies the reduced iteration budget).
+
+**Key models per tier (2026 candidates):**
+
+| Tier | Primary Candidate | License | Strengths |
+|---|---|---|---|
+| Tier 0 | Qwen 2.5 7B-Instruct | Apache 2.0 | Fast training/inference; good baseline for RAG |
+| Tier 1 | Qwen 2.5 14B-Instruct | Apache 2.0 | Best quality/cost ratio; strong reasoning across all domains |
+| Tier 2 | Qwen 2.5 32B-Instruct | Apache 2.0 | Near-70B quality at half the VRAM cost |
+| Tier 3 | Qwen 2.5 72B-Instruct | Apache 2.0 | Maximum quality; limited to 1 FT run/month on $30 |
 
 ### 3.2.3 Advanced RAG Pipeline
 
@@ -534,6 +576,7 @@ The following are explicitly excluded from this project. They may be candidates 
 | **Multi-tenant SaaS architecture** | Single-tenant deployment only in v1 |
 | **GDPR / data residency compliance engineering** | Legal review is the organisation's responsibility; platform is designed to run on-prem to support this, but compliance certification is out of scope |
 | **Automated fine-tuning on document updates** | Fine-tuning is periodic/manual; RAG handles real-time knowledge; auto-retraining adds risk of instability |
+| **MoE models** (Llama 4 Scout, Qwen 3.5 MoE variants) | Require multi-GPU for fine-tuning (112+ GB VRAM for 4-bit); exceeds $30 budget; defer to v2 if Modal credits increase |
 
 ---
 
@@ -543,17 +586,19 @@ The project plan is built on the following assumptions. If any assumption is fou
 
 | # | Assumption |
 |---|---|
-| A-01 | **Modal.com** account with $30 free credits is available; additional credits purchasable at $0.000306/sec for A10G — sufficient for all fine-tuning runs and low-to-moderate traffic inference |
-| A-02 | GPU compute via Modal.com (A10G, 24 GB VRAM) is provisionable within Week 1 via serverless functions — no hardware procurement required |
+| A-01 | **Modal.com** account with $30/month free credits is available. At < 100 queries/day with full scale-to-zero, total GPU compute costs are ~$3–$7/month — well within free credits. Remaining ~$23–$27/month headroom is allocated to iterative fine-tuning runs |
+| A-02 | GPU compute via Modal.com is provisionable within Week 1 via serverless functions — no hardware procurement required. A10G (24 GB) is available by default; L40S (48 GB) and A100-80GB (80 GB) available for higher model tiers |
 | A-03 | Domain experts can dedicate ~2–4 hours per week during Phase 1 to curate ground-truth Q&A evaluation pairs |
 | A-04 | All documents (PDFs, Office files, Markdown, HTML, images, code repos, DB records) are accessible in a readable, non-DRM-protected format |
-| A-05 | The team has working proficiency in Python, PyTorch, Hugging Face Transformers, FastAPI, and Modal SDK |
+| A-05 | The team has working proficiency in Python, PyTorch, Hugging Face ecosystem, and Modal SDK |
 | A-06 | A minimum of 200 high-quality Q&A pairs can be curated from the document corpus for evaluation |
 | A-07 | An infrastructure environment (cloud or on-prem) with at least 32 GB RAM and 500 GB storage is available for hosting the vector DB (Qdrant) and PostgreSQL document store; Modal handles all GPU workloads |
 | A-08 | Document source systems (file system, DB, code repo) can emit change events or be polled; access credentials will be provided before Phase 1 |
 | A-09 | v1 documents are in English only |
 | A-10 | No existing vendor contracts restrict use of the proposed open-source components |
-| A-11 | Modal cold start (~30s for model loading) is acceptable for off-hours and first-query scenarios; keep-warm containers used during business hours (08:00–18:00) to meet P95 ≤ 3s latency SLA |
+| A-11 | At < 100 queries/day, a ~30-second cold-start latency is acceptable for all three deployment targets. Full scale-to-zero is the default inference strategy for v1; keep-warm can be added in a future phase if latency requirements tighten |
+| A-12 | The fine-tuning dataset includes domain-agnostic examples (~5–10%) to prevent catastrophic forgetting, given the platform's universal multi-domain scope |
+| A-13 | Phase 2 Model Evaluation Gate requires ~2–3 hours of GPU time on Modal.com for benchmarking multiple candidate models. This is factored into the $30 monthly budget |
 
 ---
 
@@ -567,7 +612,7 @@ The project plan is built on the following assumptions. If any assumption is fou
 | C-04 | **Mandatory citations** on all factual responses | RAG pipeline must extract and preserve page/section provenance through the full pipeline |
 | C-05 | **Accuracy and Speed are co-equal** | No aggressive context compression that hurts accuracy; no reranking skip that hurts latency; must be benchmarked together |
 | C-06 | **Fine-tuning must not regress general language ability** | Training data must include ~5–10% general-domain examples to prevent catastrophic forgetting |
-| C-07 | **Modal cost governance** — all GPU functions must specify explicit GPU type, timeout, and use scale-to-zero for non-business hours | Prevents accidental A100/H100 usage and idle billing; cost monitoring with 80% budget alerts |
+| C-07 | **Modal cost governance** — total monthly GPU spend must remain within the $30 free credit allocation. All GPU functions must specify explicit GPU type (`gpu="A10G"`, `gpu="L40S"`, or `gpu="A100-80GB"` as appropriate), timeout (`timeout=600`), and use full scale-to-zero (no keep-warm). Cost monitoring via Modal dashboard with 80% ($24) budget alert threshold. Any model tier upgrade beyond Tier 1 requires documented cost justification in the Phase 2 Model Selection Report | Prevents runaway costs; ensures project stays within zero-cost GPU budget; formal gate for tier upgrades |
 
 ---
 
@@ -578,16 +623,17 @@ The project plan is built on the following assumptions. If any assumption is fou
 | D-01 | Document ingestion pipeline (11 source types via MarkItDown + Tree-sitter) | 1 | All source types indexed; documents searchable within ≤ 5 min of update |
 | D-02 | Ground-truth evaluation dataset (≥ 200 Q&A pairs) | 1 | Reviewed and approved by domain expert |
 | D-03 | Baseline RAG evaluation report | 1 | RAGAS metrics established as baseline |
+| D-03a | Model Selection Report (Evaluation Gate) | 2 | ≥ 2 models benchmarked across RAGAS + domain Q&A + cost/latency; winning model selected with documented rationale; signed off by ML Engineer and Product Owner |
 | D-04 | QLoRA fine-tuning run + LoRA adapter (via Modal.com) | 2 | ≥ 15% improvement over base on domain benchmark; adapter persisted to Modal Volume |
 | D-05 | Fine-tuned model domain benchmark report | 2 | Signed off by ML Engineer and Product Owner |
 | D-06 | Advanced RAG pipeline (all 9 components) | 3 | Retrieval Precision@5 ≥ 85%; citations present in ≥ 95% of factual answers |
-| D-07 | End-to-end integrated system (Modal-hosted inference) | 4 | RAGAS faithfulness ≥ 0.90; P95 latency ≤ 3 s under load (warm containers) |
+| D-07 | End-to-end integrated system (Modal-hosted inference) | 4 | RAGAS faithfulness ≥ 0.90; cold-start latency ≤ 30s |
 | D-08 | Public chatbot (live URL) | 4–5 | User acceptance testing passed |
 | D-09 | Internal REST API (OpenAPI spec) | 4–5 | API contract reviewed and approved |
 | D-10 | Agent tool wrapper | 4–5 | Successfully executes in LangGraph and LlamaIndex agent demos |
 | D-11 | Monitoring dashboard (Langfuse + OTel + Modal metrics) | 5 | All defined metrics visible; alert rules active; Modal cost tracking enabled |
 | D-12 | Operator runbooks + architecture documentation | 5 | Reviewed and signed off by DevOps and Product Owner |
-| D-13 | Modal deployment runbook | 5 | GPU function configs, keep-warm schedules, cost monitoring, and fallback procedures documented |
+| D-13 | Modal deployment runbook | 5 | GPU function configs (tier-matched), scale-to-zero strategy, cost monitoring ($24 alert threshold), and fallback procedures documented |
 
 ---
 
@@ -626,4 +672,5 @@ A deliverable is considered **Done** when:
 > |---|---|---|---|
 > | 0.1 | June 3, 2026 | Project Initiation Team | Initial draft |
 > | 1.0 | June 3, 2026 | Project Initiation Team | Integrated MarkItDown (document ingestion) and Modal.com (serverless GPU); expanded ingestion from 4 to 11+ formats; reduced timeline from 14 to 12 weeks; updated cost model |
-> | 1.1 | TBD | Project Manager | Approved for execution |
+> | 1.1 | June 3, 2026 | Project Manager | Approved for execution |
+> | 1.2 | June 3, 2026 | Project Initiation Team | Multi-domain scope (legal, healthcare, finance, tech, internal, education); multi-tier model selection (Tier 0–3: 7B→72B) with Qwen 2.5, Gemma 4, Ministral 3, DeepSeek-R1 distills; revised cost model for $30/month budget with < 100 queries/day full scale-to-zero; added Model Evaluation Gate (§3.2.2a); updated GPU tiers (A10G/L40S/A100-80GB); removed keep-warm schedule; added comprehensive evaluation framework (RAGAS + domain benchmark + cost/latency); MoE models excluded to v2 |
