@@ -7,6 +7,7 @@ The shared AUTH_SECRET is used as the encryption key.
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 
 from jose import jwe, jwt
@@ -58,6 +59,12 @@ def decode_authjs_token(token: str) -> CurrentUser:
         except JWTError as exc:
             raise ValueError(f"Invalid or expired token: {exc}") from exc
 
+    # Check token expiry
+    exp = payload.get("exp")
+    if exp and isinstance(exp, (int, float)):
+        if time.time() > exp:
+            raise ValueError("Token has expired")
+
     # Auth.js v5 token shape:
     # { "sub": "user-id", "email": "...", "name": "...", "iat": ..., "exp": ... }
     user_id = payload.get("sub")
@@ -80,13 +87,21 @@ def verify_token(token: str) -> dict:
     key = _derive_encryption_key(settings.AUTH_SECRET)
     try:
         payload_bytes = jwe.decrypt(token.encode(), key)
-        return json.loads(payload_bytes)
+        payload = json.loads(payload_bytes)
     except (JWEError, json.JSONDecodeError, UnicodeDecodeError):
         try:
-            return jwt.decode(
+            payload = jwt.decode(
                 token,
                 settings.AUTH_SECRET,
                 algorithms=["HS256"],
             )
         except JWTError as exc:
             raise ValueError(f"Invalid or expired token: {exc}") from exc
+
+    # Check token expiry
+    exp = payload.get("exp")
+    if exp and isinstance(exp, (int, float)):
+        if time.time() > exp:
+            raise ValueError("Token has expired")
+
+    return payload
