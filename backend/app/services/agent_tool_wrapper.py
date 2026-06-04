@@ -103,8 +103,8 @@ class IDKPTool:
             from app.services.rag.llm_client import generate
             from app.services.rag.prompt_builder import build_rag_prompt, extract_citations
             from app.services.rag.query_expansion import expand_query
-            from app.services.rag.retriever import retrieve
             from app.services.rag.reranker import rerank
+            from app.services.rag.retriever import retrieve
 
             # Step 1: Query expansion
             if expand:

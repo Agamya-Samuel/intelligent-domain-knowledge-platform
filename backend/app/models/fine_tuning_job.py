@@ -1,7 +1,6 @@
 """FineTuningJob model — FIFO-queued QLoRA training jobs via Modal."""
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, generate_uuid
@@ -80,12 +79,12 @@ class FineTuningJob(Base, TimestampMixin):
         comment="S3 path to full checkpoint (if exported)",
     )
     training_metrics: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="Training telemetry: loss_curve, eval_scores, epochs_completed",
     )
     eval_report: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="Post-training evaluation: ragas_metrics, domain_benchmark",
     )

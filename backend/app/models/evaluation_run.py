@@ -1,7 +1,6 @@
 """EvaluationRun model — RAGAS evaluation results for the RAG pipeline."""
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, generate_uuid
@@ -81,7 +80,7 @@ class EvaluationRun(Base, TimestampMixin):
         comment="Link to the fine-tuning job (if post_training run)",
     )
     metrics: Mapped[dict] = mapped_column(
-        JSONB,
+        JSON,
         nullable=False,
         default=dict,
         comment=(
@@ -90,12 +89,12 @@ class EvaluationRun(Base, TimestampMixin):
         ),
     )
     per_sample_scores: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="Per-question RAGAS scores for detailed analysis",
     )
     benchmark_config: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="Benchmark parameters: model list, dataset config, comparison settings",
     )
