@@ -1,0 +1,111 @@
+# IDKP Docker Compose — Staging Environment
+# Mirrors production; uses separate S3 bucket and database.
+#
+# Usage:
+#   docker compose -f docker-compose.staging.yml up -d
+#
+# Requires .env.staging file with:
+#   POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+#   AUTH_SECRET (distinct from dev)
+#   All provider credentials
+
+services:
+  # ============================================================
+  # PostgreSQL 16 — staging database
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: idkp-staging-postgres
+    restart: unless-stopped
+    ports:
+      - "${STAGING_POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-idkp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-idkp_staging_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-idkp_staging}
+    volumes:
+      - staging-pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-idkp} -d ${POSTGRES_DB:-idkp_staging}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - idkp-staging-net
+
+  # ============================================================
+  # Redis 7 — staging cache and rate limiting
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: idkp-staging-redis
+    restart: unless-stopped
+    ports:
+      - "${STAGING_REDIS_PORT:-6380}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - staging-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - idkp-staging-net
+
+  # ============================================================
+  # Langfuse 2 — staging observability
+  # ============================================================
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: idkp-staging-langfuse
+    restart: unless-stopped
+    ports:
+      - "${STAGING_LANGFUSE_PORT:-3002}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-idkp}:${POSTGRES_PASSWORD:-idkp_staging_secret}@postgres:5432/langfuse_staging
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-staging-langfuse-secret}
+      NEXTAUTH_URL: http://localhost:${STAGING_LANGFUSE_PORT:-3002}
+      SALT: ${LANGFUSE_SALT:-staging-langfuse-salt}
+      TELEMETRY_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/public/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - idkp-staging-net
+
+  # ============================================================
+  # Nginx — staging reverse proxy
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    container_name: idkp-staging-nginx
+    restart: unless-stopped
+    ports:
+      - "${STAGING_NGINX_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - idkp-staging-net
+
+volumes:
+  staging-pgdata:
+    driver: local
+  staging-redisdata:
+    driver: local
+
+networks:
+  idkp-staging-net:
+    driver: bridge
