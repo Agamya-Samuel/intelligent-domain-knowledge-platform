@@ -31,8 +31,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // TODO: Replace with real user lookup against PostgreSQL
-        // For now, accept any non-empty credentials (dev-only)
+        // Only allow credentials auth in development
+        if (process.env.NODE_ENV !== "development") {
+          return null;
+        }
+
         const email = credentials?.email as string | undefined;
         const password = credentials?.password as string | undefined;
 

@@ -44,6 +44,7 @@ RATE_LIMITS: dict[str, RateLimitConfig] = {
     "/api/v1/fine-tune": RateLimitConfig(max_requests=10, window_seconds=60),
     "/api/v1/evaluations": RateLimitConfig(max_requests=20, window_seconds=60),
     "/api/v1/analytics": RateLimitConfig(max_requests=30, window_seconds=60),
+    "/api/auth/callback/credentials": RateLimitConfig(max_requests=5, window_seconds=60),
 }
 
 # Default rate limit for unmatched paths
@@ -65,9 +66,7 @@ class _MemoryCounter:
         window_start = now - config.window_seconds
 
         # Clean old entries
-        self.windows[key] = [
-            ts for ts in self.windows[key] if ts > window_start
-        ]
+        self.windows[key] = [ts for ts in self.windows[key] if ts > window_start]
 
         if len(self.windows[key]) >= config.max_requests:
             return False
@@ -224,9 +223,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     Health check and auth routes are excluded.
     """
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
 
         # Skip rate limiting for non-API routes and health checks
