@@ -13,18 +13,16 @@ from __future__ import annotations
 
 import logging
 
-from sentence_transformers import SentenceTransformer
-
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # ── Module-level singleton ─────────────────────────────────────────
 
-_model: SentenceTransformer | None = None
+_model = None
 
 
-def _get_model() -> SentenceTransformer:
+def _get_model():
     """
     Lazy-load the sentence-transformer model.
 
@@ -33,7 +31,13 @@ def _get_model() -> SentenceTransformer:
     """
     global _model
     if _model is None:
+        if not settings.EMBEDDING_MODEL:
+            raise RuntimeError(
+                "EMBEDDING_MODEL not configured. Set EMBEDDING_MODEL in .env or use Modal embeddings in production."
+            )
         logger.info("Loading embedding model: %s", settings.EMBEDDING_MODEL)
+        from sentence_transformers import SentenceTransformer
+
         _model = SentenceTransformer(
             settings.EMBEDDING_MODEL,
             device=settings.EMBEDDING_DEVICE,
