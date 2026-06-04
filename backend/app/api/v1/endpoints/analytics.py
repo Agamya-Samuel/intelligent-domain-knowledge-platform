@@ -9,10 +9,9 @@ Provides data for the analytics/evaluation dashboard (TRD §4.8, §6.8):
 """
 
 import logging
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -284,7 +283,11 @@ async def get_budget_trend(
     points = []
     for row in reversed(rows):
         month_date = row.month
-        month_str = month_date.strftime("%Y-%m") if hasattr(month_date, "strftime") else str(month_date)
+        month_str = (
+            month_date.strftime("%Y-%m")
+            if hasattr(month_date, "strftime")
+            else str(month_date)
+        )
         points.append(
             BudgetTrendPoint(
                 month=month_str,
