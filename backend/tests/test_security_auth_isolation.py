@@ -116,10 +116,10 @@ class TestTokenValidation:
 
     def test_token_with_wrong_secret(self, client: TestClient):
         """Token signed with wrong secret should be rejected."""
-        from jose import jwt
+        import jwt as pyjwt
         payload = {"sub": "test-user", "email": "test@example.com", "name": "Test"}
         # Sign with a different secret
-        bad_token = jwt.encode(payload, "wrong-secret-key", algorithm="HS256")
+        bad_token = pyjwt.encode(payload, "wrong-secret-key", algorithm="HS256")
         response = client.get(
             "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {bad_token}"},
@@ -143,10 +143,10 @@ class TestTokenValidation:
 
     def test_cookie_auth_works(self, client: TestClient, mock_user):
         """Verify that next-auth.session-token cookie is accepted."""
-        from jose import jwt
+        import jwt as pyjwt
         from app.config import settings
 
-        token = jwt.encode(mock_user, settings.AUTH_SECRET, algorithm="HS256")
+        token = pyjwt.encode(mock_user, settings.AUTH_SECRET, algorithm="HS256")
         client.cookies.set("next-auth.session-token", token)
         response = client.get("/api/v1/auth/me")
         assert response.status_code == 200
@@ -163,10 +163,10 @@ class TestCrossUserIsolation:
     @pytest.fixture
     def user_a_headers(self):
         """Auth headers for User A."""
-        from jose import jwt
+        import jwt as pyjwt
         from app.config import settings
 
-        token = jwt.encode(
+        token = pyjwt.encode(
             {"sub": "user-a-001", "email": "alice@example.com", "name": "Alice"},
             settings.AUTH_SECRET,
             algorithm="HS256",
@@ -176,10 +176,10 @@ class TestCrossUserIsolation:
     @pytest.fixture
     def user_b_headers(self):
         """Auth headers for User B."""
-        from jose import jwt
+        import jwt as pyjwt
         from app.config import settings
 
-        token = jwt.encode(
+        token = pyjwt.encode(
             {"sub": "user-b-002", "email": "bob@example.com", "name": "Bob"},
             settings.AUTH_SECRET,
             algorithm="HS256",

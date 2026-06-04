@@ -93,10 +93,10 @@ def mock_user() -> dict[str, str]:
 @pytest.fixture
 def auth_headers(mock_user: dict[str, str]) -> dict[str, str]:
     """Generate a valid HS256 JWT for testing (not JWE for simplicity)."""
-    from jose import jwt
+    import jwt as pyjwt
     from app.config import settings
 
-    token = jwt.encode(mock_user, settings.AUTH_SECRET, algorithm="HS256")
+    token = pyjwt.encode(mock_user, settings.AUTH_SECRET, algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
 
 
