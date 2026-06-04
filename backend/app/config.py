@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     UPLOAD_CHUNK_OVERLAP: int = 200
     SUPPORTED_FILE_TYPES: str = ".pdf,.txt,.md,.docx"
 
+    # ── URL Source Fetching ────────────────────────────────────────
+    URL_FETCH_TIMEOUT_SECONDS: int = 30
+    URL_FETCH_MAX_SIZE_MB: int = 50
+
     # ── Embedding ─────────────────────────────────────────────────
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DIMENSION: int = 1024
