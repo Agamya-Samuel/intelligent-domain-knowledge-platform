@@ -173,9 +173,16 @@ async def add_source(
     )
     db.add(source)
 
+    await db.flush()
+
     # Increment dataset version
     old_version = dataset.version
     dataset.version += 1
+
+    # Count actual sources after adding
+    actual_count = await db.scalar(
+        select(func.count()).where(DatasetSource.dataset_id == dataset.id)
+    )
 
     # Create version history entry
     version_entry = DatasetVersionHistory(
@@ -183,7 +190,7 @@ async def add_source(
         dataset_id=dataset.id,
         version=dataset.version,
         change_description=(f"Added {source_type} source: {file_name or source_path}"),
-        source_count=old_version + 1,
+        source_count=actual_count,
         sources_added=1,
     )
     db.add(version_entry)
@@ -234,14 +241,23 @@ async def delete_source(
         raise ValueError(f"Source '{source_id}' not found in dataset '{dataset.id}'")
 
     await db.delete(source_obj)
+    await db.flush()
 
     # Increment version
     dataset.version += 1
+
+    # Count remaining sources
+    remaining_count = await db.scalar(
+        select(func.count()).where(DatasetSource.dataset_id == dataset.id)
+    )
+
     version_entry = DatasetVersionHistory(
         id=str(uuid.uuid4()),
         dataset_id=dataset.id,
         version=dataset.version,
         change_description=f"Removed source: {source_obj.file_name or source_obj.source_path}",
+        source_count=remaining_count,
+        sources_added=0,
     )
     db.add(version_entry)
 
