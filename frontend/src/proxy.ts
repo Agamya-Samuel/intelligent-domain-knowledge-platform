@@ -1,13 +1,14 @@
 import { auth } from "@/lib/auth";
+import type { NextRequest } from "next/server";
 
 /**
- * Next.js middleware — protects dashboard routes.
+ * Next.js proxy — protects dashboard routes.
  * Redirects unauthenticated users to /login.
  *
  * Auth.js v5's `auth()` wrapper handles session validation
  * and token refresh automatically.
  */
-export default auth((req) => {
+export const proxy = auth((req: NextRequest) => {
   const isAuthenticated = !!req.auth;
   const isLoginPage = req.nextUrl.pathname === "/login";
   const isAuthApi = req.nextUrl.pathname.startsWith("/api/auth");
