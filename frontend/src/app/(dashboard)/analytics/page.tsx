@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { fetchWithAuth } from "@/lib/api";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -68,29 +69,6 @@ interface AnalyticsOverview {
   job_stats: JobStats;
   chat_stats: ChatStats;
   budget_trend: BudgetTrend;
-}
-
-/* ── API Helper ────────────────────────────────────────────────────── */
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-function getSessionToken(): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("next-auth.session-token="));
-  return match ? match.split("=")[1] : undefined;
-}
-
-async function fetchWithAuth(url: string): Promise<Response> {
-  const token = getSessionToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  return fetch(`${API_URL}${url}`, { headers, credentials: "include" });
 }
 
 /* ── Metric Card Component ─────────────────────────────────────────── */

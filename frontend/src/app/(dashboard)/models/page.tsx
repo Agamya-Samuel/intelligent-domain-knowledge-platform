@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { fetchWithAuth } from "@/lib/api";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -45,8 +46,6 @@ interface FineTuneResult {
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 const TIER_LABELS: Record<number, string> = {
   0: "Tier 0 — Compact",
   1: "Tier 1 — Standard (Recommended)",
@@ -60,31 +59,6 @@ const TIER_DESCRIPTIONS: Record<number, string> = {
   2: "Near-70B quality at half the VRAM; requires L40S",
   3: "Maximum quality; limited runs per month on $30 budget",
 };
-
-/* ── API Helper ────────────────────────────────────────────────────── */
-
-function getSessionToken(): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("next-auth.session-token="));
-  return match ? match.split("=")[1] : undefined;
-}
-
-async function fetchWithAuth(
-  url: string,
-  options: RequestInit = {},
-): Promise<Response> {
-  const token = getSessionToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  return fetch(`${API_URL}${url}`, { ...options, headers, credentials: "include" });
-}
 
 /* ── Models Page Component ─────────────────────────────────────────── */
 

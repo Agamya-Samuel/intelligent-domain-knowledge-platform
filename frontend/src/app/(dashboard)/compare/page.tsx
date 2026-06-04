@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { fetchWithAuth } from "@/lib/api";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -33,31 +34,6 @@ interface CompareResult {
   base: VariantResponse;
   finetuned: VariantResponse;
   comparison: ComparisonMetrics;
-}
-
-/* ── API Helper ────────────────────────────────────────────────────── */
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-function getSessionToken(): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("next-auth.session-token="));
-  return match ? match.split("=")[1] : undefined;
-}
-
-async function fetchWithAuth(
-  url: string,
-  options: RequestInit = {},
-): Promise<Response> {
-  const token = getSessionToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return fetch(`${API_URL}${url}`, { ...options, headers, credentials: "include" });
 }
 
 /* ── Component ─────────────────────────────────────────────────────── */
