@@ -1,0 +1,80 @@
+{
+  "Rules": [
+    {
+      "ID": "TransitionToGlacierAfter90Days",
+      "Filter": {
+        "Prefix": "raw/"
+      },
+      "Status": "Enabled",
+      "Transitions": [
+        {
+          "Days": 90,
+          "StorageClass": "GLACIER"
+        }
+      ]
+    },
+    {
+      "ID": "TransitionToGlacierAfter90DaysConverted",
+      "Filter": {
+        "Prefix": "converted/"
+      },
+      "Status": "Enabled",
+      "Transitions": [
+        {
+          "Days": 90,
+          "StorageClass": "GLACIER"
+        }
+      ]
+    },
+    {
+      "ID": "DeleteRawAfter365Days",
+      "Filter": {
+        "Prefix": "raw/"
+      },
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 365
+      }
+    },
+    {
+      "ID": "DeleteConvertedAfter365Days",
+      "Filter": {
+        "Prefix": "converted/"
+      },
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 365
+      }
+    },
+    {
+      "ID": "DeleteLogsAfter90Days",
+      "Filter": {
+        "Prefix": "logs/"
+      },
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 90
+      }
+    },
+    {
+      "ID": "DeleteEvalReportsAfter180Days",
+      "Filter": {
+        "Prefix": "eval/"
+      },
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 180
+      }
+    },
+    {
+      "ID": "IncompleteMultipartUploads",
+      "Filter": {
+        "Prefix": ""
+      },
+      "Status": "Enabled",
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    }
+  ]
+}
