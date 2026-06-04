@@ -84,13 +84,14 @@ def upgrade() -> None:
             sa.JSON,
             nullable=True,
             comment="Citation metadata: [{source, page, section}]",
-        )
+        ),
         sa.Column(
             "retrieval_context",
             sa.JSON,
             nullable=True,
             comment="Retrieved chunks used for generation",
-        )
+        ),
+    )
 
 
 def downgrade() -> None:
