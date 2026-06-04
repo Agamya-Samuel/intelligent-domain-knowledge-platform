@@ -1,7 +1,6 @@
 """KnowledgeRelation model — edges in the knowledge graph."""
 
-from sqlalchemy import Float, ForeignKey, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, generate_uuid
@@ -61,7 +60,7 @@ class KnowledgeRelation(Base, TimestampMixin):
     )
     metadata_: Mapped[dict] = mapped_column(
         "metadata",
-        JSONB,
+        JSON,
         nullable=False,
         default=dict,
         server_default="{}",

@@ -1,7 +1,6 @@
 """DocumentChunk model — text segments for RAG retrieval."""
 
-from sqlalchemy import ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, generate_uuid
@@ -42,7 +41,7 @@ class DocumentChunk(Base, TimestampMixin):
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     metadata_: Mapped[dict] = mapped_column(
         "metadata",
-        JSONB,
+        JSON,
         nullable=False,
         default=dict,
         server_default="{}",

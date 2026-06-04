@@ -1,7 +1,7 @@
 """KnowledgeEntity model — extracted entities/nodes for the knowledge graph."""
 
-from sqlalchemy import ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import JSON, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, generate_uuid
@@ -43,7 +43,7 @@ class KnowledgeEntity(Base, TimestampMixin):
     )
     metadata_: Mapped[dict] = mapped_column(
         "metadata",
-        JSONB,
+        JSON,
         nullable=False,
         default=dict,
         server_default="{}",
