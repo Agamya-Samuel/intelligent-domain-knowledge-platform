@@ -2,6 +2,7 @@
 FastAPI dependencies — auth extraction and database session injection.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,8 @@ from app.core.security import CurrentUser, decode_authjs_token
 from app.db.session import async_session_factory, get_db  # re-exported for endpoint use
 
 __all__ = ["get_current_user", "get_db", "get_db_context"]
+
+logger = logging.getLogger(__name__)
 
 
 async def get_current_user(request: Request) -> CurrentUser:
@@ -43,9 +46,10 @@ async def get_current_user(request: Request) -> CurrentUser:
     try:
         user = decode_authjs_token(token)
     except ValueError as exc:
+        logger.warning("Invalid token: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {exc}",
+            detail="Invalid or expired authentication token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 

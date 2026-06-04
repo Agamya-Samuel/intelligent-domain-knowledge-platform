@@ -56,6 +56,7 @@ async def chat_query(
     Creates or resumes a session, retrieves relevant chunks, generates
     a streaming LLM response with citations.
     """
+
     async def event_generator():
         """Generate SSE events from the RAG pipeline."""
         try:
@@ -73,9 +74,10 @@ async def chat_query(
                 section=filters.section if filters else None,
             ):
                 yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
-        except Exception as exc:
+        except Exception:
             logger.exception("SSE event generation failed")
-            error_data = json.dumps({"error": "Internal error", "detail": str(exc)})
+            # Sanitize: log full details server-side, send generic message to client
+            error_data = json.dumps({"error": "Internal error during chat generation"})
             yield f"event: error\ndata: {error_data}\n\n"
 
     return StreamingResponse(
