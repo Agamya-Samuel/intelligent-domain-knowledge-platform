@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import router as v1_router
 from app.config import settings
+from app.middleware.csrf import CSRFDetectionMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,9 @@ app.add_middleware(
 
 # ── Rate Limiting ──────────────────────────────────────────────────────────
 app.add_middleware(RateLimitMiddleware)
+
+# ── CSRF Protection ───────────────────────────────────────────────────────
+app.add_middleware(CSRFDetectionMiddleware)
 
 # ── API Routes ──────────────────────────────────────────────────────────────
 app.include_router(v1_router)
