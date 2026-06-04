@@ -8,7 +8,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "c5e9f0a1b2c3"
@@ -27,11 +26,11 @@ def upgrade() -> None:
 
     op.add_column(
         "evaluation_runs",
-        sa.Column("per_sample_scores", postgresql.JSONB(), nullable=True),
+        sa.Column("per_sample_scores", sa.JSON(), nullable=True),
     )
     op.add_column(
         "evaluation_runs",
-        sa.Column("benchmark_config", postgresql.JSONB(), nullable=True),
+        sa.Column("benchmark_config", sa.JSON(), nullable=True),
     )
     op.add_column(
         "evaluation_runs",

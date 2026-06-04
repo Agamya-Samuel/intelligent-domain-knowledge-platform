@@ -8,7 +8,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "a3b7c9d2e4f5"
@@ -82,41 +81,16 @@ def upgrade() -> None:
         ),
         sa.Column(
             "citations",
-            postgresql.JSONB,
+            sa.JSON,
             nullable=True,
             comment="Citation metadata: [{source, page, section}]",
-        ),
+        )
         sa.Column(
             "retrieval_context",
-            postgresql.JSONB,
+            sa.JSON,
             nullable=True,
             comment="Retrieved chunks used for generation",
-        ),
-        sa.Column(
-            "latency_ms",
-            sa.Integer,
-            nullable=True,
-            comment="End-to-end latency in milliseconds",
-        ),
-        sa.Column(
-            "token_count",
-            sa.Integer,
-            nullable=True,
-            comment="Token count of this message",
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
-        ),
-    )
+        )
 
 
 def downgrade() -> None:
