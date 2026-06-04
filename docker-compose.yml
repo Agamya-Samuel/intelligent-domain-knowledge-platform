@@ -76,6 +76,31 @@ services:
       - idkp-net
 
   # ============================================================
+  # pgAdmin 4 — PostgreSQL administration interface
+  # ============================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: idkp-pgadmin
+    restart: unless-stopped
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@idkp.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    volumes:
+      - pgadmindata:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/misc/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - idkp-net
+
+  # ============================================================
   # Nginx — reverse proxy (routes /api/* and /ws/* to FastAPI)
   # ============================================================
   nginx:
@@ -98,6 +123,8 @@ volumes:
   pgdata:
     driver: local
   redisdata:
+    driver: local
+  pgadmindata:
     driver: local
 
 networks:
