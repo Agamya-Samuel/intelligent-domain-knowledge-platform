@@ -341,9 +341,17 @@ export default function DatasetsPage() {
         { method: "POST" }
       );
       if (res.ok) {
+        const data = await res.json();
         setShowAddSourceDialog(false);
         setSourceUrl("");
-        setToast({ message: "URL source added", type: "success" });
+        if (data.status === "failed") {
+          setToast({
+            message: "URL was added but content could not be fetched",
+            type: "error",
+          });
+        } else {
+          setToast({ message: "URL source added", type: "success" });
+        }
         await fetchDetail(selectedDataset.id);
         await fetchDatasets();
       } else {
