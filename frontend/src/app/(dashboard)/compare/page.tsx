@@ -24,7 +24,7 @@ interface VariantResponse {
 interface ComparisonMetrics {
   latency_delta_ms: number;
   token_count_delta: number;
-  citation_overlap: float;
+  citation_overlap: number;
   response_length_delta: number;
 }
 
