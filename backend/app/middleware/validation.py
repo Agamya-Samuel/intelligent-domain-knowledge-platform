@@ -34,7 +34,10 @@ ALLOWED_URL_SCHEMES = {"http", "https"}
 
 # Patterns for prompt injection detection
 _INJECTION_PATTERNS = [
-    re.compile(r"(ignore|forget|disregard)\s+(all\s+)?(previous|above|prior)\s+(instructions|prompts|rules)", re.IGNORECASE),
+    re.compile(
+        r"(ignore|forget|disregard)\s+(all\s+)?(previous|above|prior)\s+(instructions|prompts|rules)",
+        re.IGNORECASE,
+    ),
     re.compile(r"you\s+are\s+now\s+(a|an)\s+", re.IGNORECASE),
     re.compile(r"system\s*:\s*", re.IGNORECASE),
     re.compile(r"<\s*script", re.IGNORECASE),

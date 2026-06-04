@@ -1,7 +1,6 @@
 """ChatMessage model — individual messages within a chat session."""
 
-from sqlalchemy import ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, generate_uuid
@@ -39,12 +38,12 @@ class ChatMessage(Base, TimestampMixin):
         comment="Message text content",
     )
     citations: Mapped[list | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="Citation metadata: [{source, page, section}]",
     )
     retrieval_context: Mapped[list | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="Retrieved chunks used for generation",
     )

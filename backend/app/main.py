@@ -13,8 +13,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import router as v1_router
-from app.middleware.rate_limit import RateLimitMiddleware
 from app.config import settings
+from app.middleware.rate_limit import RateLimitMiddleware
+
 logger = logging.getLogger(__name__)
 
 

@@ -2,14 +2,14 @@
 FastAPI dependencies — auth extraction and database session injection.
 """
 
-from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import CurrentUser, decode_authjs_token
-from app.db.session import get_db, async_session_factory  # re-exported for endpoint use
+from app.db.session import async_session_factory, get_db  # re-exported for endpoint use
 
 __all__ = ["get_current_user", "get_db", "get_db_context"]
 
