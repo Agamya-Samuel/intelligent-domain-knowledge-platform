@@ -8,8 +8,8 @@ import type { NextRequest } from "next/server";
  * Auth.js v5's `auth()` wrapper handles session validation
  * and token refresh automatically.
  */
-export const proxy = auth((req: NextRequest) => {
-  const isAuthenticated = !!req.auth;
+export const proxy = auth((req) => {
+  const isAuthenticated = !!(req as NextRequest & { auth?: unknown }).auth;
   const isLoginPage = req.nextUrl.pathname === "/login";
   const isAuthApi = req.nextUrl.pathname.startsWith("/api/auth");
 
