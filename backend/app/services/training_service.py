@@ -15,10 +15,9 @@ Training data is uploaded to S3 before job submission, and the Modal
 function pulls it at runtime from the `datasets/` prefix.
 """
 
-import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -124,7 +123,7 @@ async def submit_training_job(
         raise ValueError(f"Job '{job_id}' is in status '{job.status}', cannot start training")
 
     # Transition to training
-    await _update_job_status(db, job_id, "training", started_at=datetime.now(timezone.utc))
+    await _update_job_status(db, job_id, "training", started_at=datetime.now(UTC))
 
     try:
         # 2. Prepare and upload training data
@@ -178,7 +177,7 @@ async def submit_training_job(
         await _update_job_status(
             db, job_id, "failed",
             error_message=str(exc)[:2000],
-            completed_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(UTC),
         )
         logger.exception("Training job %s submission failed: %s", job_id, exc)
         raise
@@ -324,7 +323,7 @@ async def finalize_job(
             status="completed",
             eval_report=eval_report or {},
             cost=cost,
-            completed_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(UTC),
         )
     )
     await db.flush()
@@ -345,7 +344,7 @@ async def fail_job(
     await _update_job_status(
         db, job_id, "failed",
         error_message=error[:2000],
-        completed_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(UTC),
     )
     logger.warning("Job %s failed: %s", job_id, error[:200])
 

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_base_model(model_id: str) -> str:
     """Map a MODEL_CATALOG id to the Hugging Face model repo path."""
-    MODEL_MAP = {
+    model_map = {
         "qwen2.5-7b": "Qwen/Qwen2.5-7B-Instruct",
         "gemma4-e4b": "google/gemma-4-e4b",
         "qwen2.5-14b": "Qwen/Qwen2.5-14B-Instruct",
@@ -38,7 +38,7 @@ def _resolve_base_model(model_id: str) -> str:
         "qwen2.5-72b": "Qwen/Qwen2.5-72B-Instruct",
         "llama3.3-70b": "meta-llama/Llama-3.3-70B-Instruct",
     }
-    return MODEL_MAP.get(model_id, model_id)
+    return model_map.get(model_id, model_id)
 
 
 def _build_lora_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -100,15 +100,14 @@ def train_qlora(
     Returns:
         Dict with training results: loss_curve, final_loss, adapter_path, metrics
     """
-    import json as _json
     import tempfile
 
     # Guard: heavy imports only available on Modal
     try:
-        from unsloth import FastLanguageModel  # type: ignore[import-not-found]
-        from peft import LoraConfig, get_peft_model  # type: ignore[import-not-found]
-        from transformers import TrainingArguments, Trainer  # type: ignore[import-not-found]
         from datasets import load_dataset  # type: ignore[import-not-found]
+        from peft import LoraConfig, get_peft_model  # type: ignore[import-not-found] # noqa: F401
+        from transformers import Trainer, TrainingArguments  # type: ignore[import-not-found]
+        from unsloth import FastLanguageModel  # type: ignore[import-not-found]
     except ImportError:
         logger.warning(
             "Unsloth/PEFT not available — returning dry-run result for job %s",
@@ -233,8 +232,9 @@ def train_qlora(
     # 7. Upload adapter to S3
     adapter_s3_path = None
     try:
-        import boto3
         from pathlib import Path
+
+        import boto3
 
         s3 = boto3.client("s3")
         bucket = os.environ.get("S3_BUCKET_NAME", "idkp-documents-dev")

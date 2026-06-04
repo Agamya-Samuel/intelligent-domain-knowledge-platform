@@ -181,6 +181,7 @@ async def detect_staleness(
         }
     """
     from sqlalchemy import select
+
     from app.models.dataset import Dataset
     from app.models.fine_tuning_job import FineTuningJob
 
@@ -231,8 +232,8 @@ async def detect_staleness(
         "sources_since_ft": version_diff,
         "is_stale": is_stale,
         "message": (
-            f"{version_diff} new source(s) added since last fine-tune (v{last_job.dataset_version}). "
-            "Consider re-training."
+            f"{version_diff} new source(s) added since last fine-tune "
+            f"(v{last_job.dataset_version}). Consider re-training."
             if is_stale
             else None
         ),

@@ -39,7 +39,8 @@ async def record_spend(
     Called after a job completes (or fails with partial cost).
     If a record already exists for this job, it is updated.
     """
-    from sqlalchemy import select as sa_select, update as sa_update
+    from sqlalchemy import select as sa_select
+    from sqlalchemy import update as sa_update
 
     existing_result = await db.execute(
         sa_select(BudgetTracking).where(BudgetTracking.job_id == job_id)
