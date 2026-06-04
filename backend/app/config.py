@@ -2,6 +2,7 @@
 IDKP Backend — application settings loaded from environment variables.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
 
     # ── Application ──────────────────────────────────────────────
     APP_NAME: str = "IDKP Backend"
-    DEBUG: bool = True
+    DEBUG: bool = False
     BACKEND_URL: str = "http://localhost:8000"
     FRONTEND_URL: str = "http://localhost:3000"
 
@@ -28,6 +29,19 @@ class Settings(BaseSettings):
     # ── Auth (Auth.js v5 / NextAuth) ─────────────────────────────
     AUTH_SECRET: str = "change-me-in-production"
     AUTH_TRUST_HOST: bool = True
+
+    @field_validator("AUTH_SECRET")
+    @classmethod
+    def validate_auth_secret(cls, v: str) -> str:
+        import os
+
+        if not v or v in ("change-me-in-production", "dev-secret-change-me-openssl-rand-base64-32"):
+            if os.getenv("NODE_ENV") == "production" or os.getenv("ENV") == "prod":
+                raise ValueError(
+                    "AUTH_SECRET must be set to a secure value in production. "
+                    "Generate one with: openssl rand -base64 32"
+                )
+        return v
 
     # ── Modal.com ────────────────────────────────────────────────
     MODAL_TOKEN_ID: str = ""
@@ -67,24 +81,24 @@ class Settings(BaseSettings):
 
     # ── Advanced RAG (Phase 3 — Week 8-9) ─────────────────────────
     # Hybrid retrieval
-    RAG_HYBRID_ENABLED: bool = True         # Enable BM25 + dense hybrid
-    RAG_BM25_TOP_K: int = 20               # BM25 candidates before fusion
-    RAG_DENSE_TOP_K: int = 20              # Dense candidates before fusion
-    RAG_RRF_K: int = 60                    # Reciprocal Rank Fusion constant
+    RAG_HYBRID_ENABLED: bool = True  # Enable BM25 + dense hybrid
+    RAG_BM25_TOP_K: int = 20  # BM25 candidates before fusion
+    RAG_DENSE_TOP_K: int = 20  # Dense candidates before fusion
+    RAG_RRF_K: int = 60  # Reciprocal Rank Fusion constant
 
     # Cross-encoder reranking
     RAG_RERANKER_ENABLED: bool = True
     RAG_RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
-    RAG_RERANKER_TOP_K: int = 5            # Final output after reranking
+    RAG_RERANKER_TOP_K: int = 5  # Final output after reranking
 
     # Query expansion
-    RAG_HYDE_ENABLED: bool = True           # HyDE hypothetical answer expansion
-    RAG_MULTI_QUERY_ENABLED: bool = True    # Multi-query variant generation
-    RAG_MULTI_QUERY_COUNT: int = 3          # Number of query variants
+    RAG_HYDE_ENABLED: bool = True  # HyDE hypothetical answer expansion
+    RAG_MULTI_QUERY_ENABLED: bool = True  # Multi-query variant generation
+    RAG_MULTI_QUERY_COUNT: int = 3  # Number of query variants
 
     # Context quality
     RAG_CONTEXT_DEDUP_THRESHOLD: float = 0.95  # Cosine sim for near-dup removal
-    RAG_RELEVANCE_GATE_ENABLED: bool = True    # Self-RAG relevance scoring
+    RAG_RELEVANCE_GATE_ENABLED: bool = True  # Self-RAG relevance scoring
     RAG_RELEVANCE_GATE_THRESHOLD: float = 0.4  # Min relevance score to keep chunk
 
     # Metadata filtering
@@ -102,23 +116,23 @@ class Settings(BaseSettings):
 
     # ── Evaluation / RAGAS ─────────────────────────────────────────
     EVAL_LLM_BASE_URL: str = ""  # defaults to LLM_BASE_URL if empty
-    EVAL_LLM_MODEL: str = ""     # defaults to LLM_MODEL if empty
+    EVAL_LLM_MODEL: str = ""  # defaults to LLM_MODEL if empty
     EVAL_LLM_API_KEY: str = "not-needed"
-    EVAL_MAX_CONCURRENCY: int = 3   # max parallel RAG pipeline calls during eval
-    EVAL_TIMEOUT_SECONDS: int = 300 # total timeout for a full evaluation run
+    EVAL_MAX_CONCURRENCY: int = 3  # max parallel RAG pipeline calls during eval
+    EVAL_TIMEOUT_SECONDS: int = 300  # total timeout for a full evaluation run
 
     # ── QLoRA Fine-tuning ──────────────────────────────────────────
-    QLORA_RANK: int = 64               # LoRA rank (higher = more capacity)
-    QLORA_ALPHA: int = 128             # LoRA alpha scaling factor
-    QLORA_DROPOUT: float = 0.05        # LoRA dropout rate
+    QLORA_RANK: int = 64  # LoRA rank (higher = more capacity)
+    QLORA_ALPHA: int = 128  # LoRA alpha scaling factor
+    QLORA_DROPOUT: float = 0.05  # LoRA dropout rate
     QLORA_LEARNING_RATE: float = 2e-4  # Initial learning rate
-    QLORA_NUM_EPOCHS: int = 3          # Default training epochs
-    QLORA_BATCH_SIZE: int = 4          # Per-device batch size
-    QLORA_GRAD_ACCUM_STEPS: int = 4    # Gradient accumulation steps
-    QLORA_MAX_SEQ_LENGTH: int = 2048   # Max sequence length for training
-    QLORA_CHECKPOINT_STEPS: int = 50   # Save checkpoint every N steps
+    QLORA_NUM_EPOCHS: int = 3  # Default training epochs
+    QLORA_BATCH_SIZE: int = 4  # Per-device batch size
+    QLORA_GRAD_ACCUM_STEPS: int = 4  # Gradient accumulation steps
+    QLORA_MAX_SEQ_LENGTH: int = 2048  # Max sequence length for training
+    QLORA_CHECKPOINT_STEPS: int = 50  # Save checkpoint every N steps
     CHECKPOINT_S3_PREFIX: str = "checkpoints"  # S3 prefix for checkpoints
-    MODAL_VOLUME_NAME: str = "idkp-models"     # Modal Volume for base model persistence
+    MODAL_VOLUME_NAME: str = "idkp-models"  # Modal Volume for base model persistence
 
 
 settings = Settings()
@@ -127,34 +141,124 @@ settings = Settings()
 # ── Model Catalog (static configuration — TRD §4.2) ───────────────
 MODEL_CATALOG: list[dict] = [
     # Tier 0 — Compact
-    {"id": "qwen2.5-7b", "name": "Qwen 2.5 7B-Instruct", "tier": 0, "size": "7B",
-     "gpu": "A10G", "vram_gb": 6.5, "est_cost": 2.0, "est_time_min": 30,
-     "license": "Apache 2.0", "available": True, "quality_rating": 0.75},
-    {"id": "gemma4-e4b", "name": "Gemma 4 E4B", "tier": 0, "size": "4B",
-     "gpu": "A10G", "vram_gb": 5.0, "est_cost": 1.0, "est_time_min": 20,
-     "license": "Gemma", "available": True, "quality_rating": 0.70},
+    {
+        "id": "qwen2.5-7b",
+        "name": "Qwen 2.5 7B-Instruct",
+        "tier": 0,
+        "size": "7B",
+        "gpu": "A10G",
+        "vram_gb": 6.5,
+        "est_cost": 2.0,
+        "est_time_min": 30,
+        "license": "Apache 2.0",
+        "available": True,
+        "quality_rating": 0.75,
+    },
+    {
+        "id": "gemma4-e4b",
+        "name": "Gemma 4 E4B",
+        "tier": 0,
+        "size": "4B",
+        "gpu": "A10G",
+        "vram_gb": 5.0,
+        "est_cost": 1.0,
+        "est_time_min": 20,
+        "license": "Gemma",
+        "available": True,
+        "quality_rating": 0.70,
+    },
     # Tier 1 — Standard (Primary)
-    {"id": "qwen2.5-14b", "name": "Qwen 2.5 14B-Instruct", "tier": 1, "size": "14B",
-     "gpu": "A10G", "vram_gb": 8.5, "est_cost": 3.5, "est_time_min": 60,
-     "license": "Apache 2.0", "available": True, "quality_rating": 0.85},
-    {"id": "ministral3-14b", "name": "Mistral Ministral 3 14B-Instruct", "tier": 1, "size": "14B",
-     "gpu": "A10G", "vram_gb": 9.0, "est_cost": 4.0, "est_time_min": 65,
-     "license": "Apache 2.0", "available": True, "quality_rating": 0.83},
-    {"id": "deepseek-r1-14b", "name": "DeepSeek-R1 Distill Qwen 14B", "tier": 1, "size": "14B",
-     "gpu": "A10G", "vram_gb": 8.5, "est_cost": 3.5, "est_time_min": 55,
-     "license": "MIT", "available": True, "quality_rating": 0.84},
+    {
+        "id": "qwen2.5-14b",
+        "name": "Qwen 2.5 14B-Instruct",
+        "tier": 1,
+        "size": "14B",
+        "gpu": "A10G",
+        "vram_gb": 8.5,
+        "est_cost": 3.5,
+        "est_time_min": 60,
+        "license": "Apache 2.0",
+        "available": True,
+        "quality_rating": 0.85,
+    },
+    {
+        "id": "ministral3-14b",
+        "name": "Mistral Ministral 3 14B-Instruct",
+        "tier": 1,
+        "size": "14B",
+        "gpu": "A10G",
+        "vram_gb": 9.0,
+        "est_cost": 4.0,
+        "est_time_min": 65,
+        "license": "Apache 2.0",
+        "available": True,
+        "quality_rating": 0.83,
+    },
+    {
+        "id": "deepseek-r1-14b",
+        "name": "DeepSeek-R1 Distill Qwen 14B",
+        "tier": 1,
+        "size": "14B",
+        "gpu": "A10G",
+        "vram_gb": 8.5,
+        "est_cost": 3.5,
+        "est_time_min": 55,
+        "license": "MIT",
+        "available": True,
+        "quality_rating": 0.84,
+    },
     # Tier 2 — Enhanced
-    {"id": "qwen2.5-32b", "name": "Qwen 2.5 32B-Instruct", "tier": 2, "size": "32B",
-     "gpu": "L40S", "vram_gb": 24.0, "est_cost": 12.0, "est_time_min": 90,
-     "license": "Apache 2.0", "available": True, "quality_rating": 0.92},
-    {"id": "gemma4-31b", "name": "Gemma 4 31B", "tier": 2, "size": "31B",
-     "gpu": "L40S", "vram_gb": 26.0, "est_cost": 14.0, "est_time_min": 100,
-     "license": "Gemma", "available": True, "quality_rating": 0.90},
+    {
+        "id": "qwen2.5-32b",
+        "name": "Qwen 2.5 32B-Instruct",
+        "tier": 2,
+        "size": "32B",
+        "gpu": "L40S",
+        "vram_gb": 24.0,
+        "est_cost": 12.0,
+        "est_time_min": 90,
+        "license": "Apache 2.0",
+        "available": True,
+        "quality_rating": 0.92,
+    },
+    {
+        "id": "gemma4-31b",
+        "name": "Gemma 4 31B",
+        "tier": 2,
+        "size": "31B",
+        "gpu": "L40S",
+        "vram_gb": 26.0,
+        "est_cost": 14.0,
+        "est_time_min": 100,
+        "license": "Gemma",
+        "available": True,
+        "quality_rating": 0.90,
+    },
     # Tier 3 — Maximum
-    {"id": "qwen2.5-72b", "name": "Qwen 2.5 72B-Instruct", "tier": 3, "size": "72B",
-     "gpu": "A100-80GB", "vram_gb": 41.0, "est_cost": 28.0, "est_time_min": 180,
-     "license": "Apache 2.0", "available": True, "quality_rating": 0.96},
-    {"id": "llama3.3-70b", "name": "Llama 3.3 70B-Instruct", "tier": 3, "size": "70B",
-     "gpu": "A100-80GB", "vram_gb": 40.0, "est_cost": 25.0, "est_time_min": 170,
-     "license": "Llama 3.3", "available": True, "quality_rating": 0.95},
+    {
+        "id": "qwen2.5-72b",
+        "name": "Qwen 2.5 72B-Instruct",
+        "tier": 3,
+        "size": "72B",
+        "gpu": "A100-80GB",
+        "vram_gb": 41.0,
+        "est_cost": 28.0,
+        "est_time_min": 180,
+        "license": "Apache 2.0",
+        "available": True,
+        "quality_rating": 0.96,
+    },
+    {
+        "id": "llama3.3-70b",
+        "name": "Llama 3.3 70B-Instruct",
+        "tier": 3,
+        "size": "70B",
+        "gpu": "A100-80GB",
+        "vram_gb": 40.0,
+        "est_cost": 25.0,
+        "est_time_min": 170,
+        "license": "Llama 3.3",
+        "available": True,
+        "quality_rating": 0.95,
+    },
 ]
