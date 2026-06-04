@@ -216,16 +216,17 @@ def _chunks_to_qa_pairs(chunks: list[dict[str, Any]]) -> list[dict[str, str]]:
             f"{topic[:80]}...?"
         )
         sample_output = (
-            f"Based on the provided context, the key information is: "
-            f"{content[:300].strip()}"
+            f"Based on the provided context, the key information is: {content[:300].strip()}"
         )
-        samples.append({
-            "instruction": instruction,
-            "input": sample_input,
-            "output": sample_output,
-            "domain": chunk.get("domain", "domain"),
-            "type": "qa",
-        })
+        samples.append(
+            {
+                "instruction": instruction,
+                "input": sample_input,
+                "output": sample_output,
+                "domain": chunk.get("domain", "domain"),
+                "type": "qa",
+            }
+        )
 
     return samples
 
@@ -240,13 +241,15 @@ def _chunks_to_summary_samples(chunks: list[dict[str, Any]]) -> list[dict[str, s
             continue
 
         truncated = content[:800].strip()
-        samples.append({
-            "instruction": _SUMMARY_INSTRUCTION,
-            "input": truncated,
-            "output": f"Summary: {truncated[:300].strip()}",
-            "domain": chunk.get("domain", "domain"),
-            "type": "summary",
-        })
+        samples.append(
+            {
+                "instruction": _SUMMARY_INSTRUCTION,
+                "input": truncated,
+                "output": f"Summary: {truncated[:300].strip()}",
+                "domain": chunk.get("domain", "domain"),
+                "type": "summary",
+            }
+        )
 
     return samples
 
@@ -261,18 +264,20 @@ def _chunks_to_reasoning_samples(chunks: list[dict[str, Any]]) -> list[dict[str,
             continue
 
         truncated = content[:600].strip()
-        samples.append({
-            "instruction": _REASONING_INSTRUCTION,
-            "input": f"Analyse the following information:\n{truncated}",
-            "output": (
-                f"Step-by-step analysis:\n"
-                f"1. The key topic addressed is: {truncated[:120].strip()}\n"
-                f"2. Supporting evidence includes: {truncated[120:300].strip()}\n"
-                f"3. Conclusion: The information provides insight into the domain topic."
-            ),
-            "domain": chunk.get("domain", "domain"),
-            "type": "reasoning",
-        })
+        samples.append(
+            {
+                "instruction": _REASONING_INSTRUCTION,
+                "input": f"Analyse the following information:\n{truncated}",
+                "output": (
+                    f"Step-by-step analysis:\n"
+                    f"1. The key topic addressed is: {truncated[:120].strip()}\n"
+                    f"2. Supporting evidence includes: {truncated[120:300].strip()}\n"
+                    f"3. Conclusion: The information provides insight into the domain topic."
+                ),
+                "domain": chunk.get("domain", "domain"),
+                "type": "reasoning",
+            }
+        )
 
     return samples
 
@@ -300,7 +305,9 @@ def _inject_general_examples(
     random.shuffle(combined)
     logger.info(
         "Training data: %d domain samples + %d general samples = %d total",
-        len(samples), len(general), len(combined),
+        len(samples),
+        len(general),
+        len(combined),
     )
     return combined
 

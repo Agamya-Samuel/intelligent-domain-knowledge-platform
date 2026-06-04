@@ -121,7 +121,4 @@ class FineTuningJob(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<FineTuningJob id={self.id!r} model={self.model_id!r} "
-            f"status={self.status!r}>"
-        )
+        return f"<FineTuningJob id={self.id!r} model={self.model_id!r} status={self.status!r}>"

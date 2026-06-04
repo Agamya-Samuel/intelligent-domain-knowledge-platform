@@ -218,16 +218,22 @@ async def retrieve(
 
     try:
         # Determine which components are active
-        hybrid_active = (use_hybrid if use_hybrid is not None
-                         else settings.RAG_HYBRID_ENABLED)
-        reranker_active = (use_reranker if use_reranker is not None
-                           else settings.RAG_RERANKER_ENABLED)
-        expansion_active = (use_expansion if use_expansion is not None
-                            else (settings.RAG_HYDE_ENABLED or settings.RAG_MULTI_QUERY_ENABLED))
+        hybrid_active = use_hybrid if use_hybrid is not None else settings.RAG_HYBRID_ENABLED
+        reranker_active = (
+            use_reranker if use_reranker is not None else settings.RAG_RERANKER_ENABLED
+        )
+        expansion_active = (
+            use_expansion
+            if use_expansion is not None
+            else (settings.RAG_HYDE_ENABLED or settings.RAG_MULTI_QUERY_ENABLED)
+        )
 
         logger.info(
             "Retrieval pipeline: query=%.80s... hybrid=%s reranker=%s expansion=%s",
-            query, hybrid_active, reranker_active, expansion_active,
+            query,
+            hybrid_active,
+            reranker_active,
+            expansion_active,
         )
 
         # ── Step 1: Query expansion ──

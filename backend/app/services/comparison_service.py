@@ -186,9 +186,7 @@ async def detect_staleness(
     from app.models.fine_tuning_job import FineTuningJob
 
     # Get current dataset version
-    ds_result = await db.execute(
-        select(Dataset).where(Dataset.id == dataset_id)
-    )
+    ds_result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
     dataset = ds_result.scalar_one_or_none()
     if not dataset:
         return {

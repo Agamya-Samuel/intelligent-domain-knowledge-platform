@@ -87,9 +87,7 @@ def _get_modal_client():
 
         return modal
     except ImportError:
-        logger.warning(
-            "modal SDK not installed — training will run in dry-run mode"
-        )
+        logger.warning("modal SDK not installed — training will run in dry-run mode")
         return None
 
 
@@ -113,9 +111,7 @@ async def submit_training_job(
     Returns the updated job data as a dict.
     """
     # 1. Load job
-    result = await db.execute(
-        select(FineTuningJob).where(FineTuningJob.id == job_id)
-    )
+    result = await db.execute(select(FineTuningJob).where(FineTuningJob.id == job_id))
     job = result.scalar_one_or_none()
     if not job:
         raise ValueError(f"Job '{job_id}' not found")
@@ -163,7 +159,9 @@ async def submit_training_job(
 
         logger.info(
             "Training job %s submitted: modal_fn=%s samples=%d",
-            job_id, function_id, data["total_samples"],
+            job_id,
+            function_id,
+            data["total_samples"],
         )
 
         return {
@@ -175,7 +173,9 @@ async def submit_training_job(
 
     except Exception as exc:
         await _update_job_status(
-            db, job_id, "failed",
+            db,
+            job_id,
+            "failed",
             error_message=str(exc)[:2000],
             completed_at=datetime.now(UTC),
         )
@@ -197,9 +197,7 @@ def _build_modal_config(
     """
     from app.config import MODEL_CATALOG
 
-    model_entry = next(
-        (m for m in MODEL_CATALOG if m["id"] == job.model_id), None
-    )
+    model_entry = next((m for m in MODEL_CATALOG if m["id"] == job.model_id), None)
     gpu = model_entry["gpu"] if model_entry else "A10G"
     vram_gb = model_entry["vram_gb"] if model_entry else 16.0
 
@@ -244,7 +242,9 @@ def _submit_modal_job(
     # defined in the separate modal_train.py module.
     logger.info(
         "Submitting Modal training job: gpu=%s model=%s data=%s",
-        config["gpu"], config["model_id"], s3_data_path,
+        config["gpu"],
+        config["model_id"],
+        s3_data_path,
     )
     return f"modal-{job_id}-{int(time.time())}"
 
@@ -270,9 +270,7 @@ async def _update_job_status(
     if completed_at is not None:
         values["completed_at"] = completed_at
 
-    await db.execute(
-        update(FineTuningJob).where(FineTuningJob.id == job_id).values(**values)
-    )
+    await db.execute(update(FineTuningJob).where(FineTuningJob.id == job_id).values(**values))
     await db.flush()
 
 
@@ -342,7 +340,9 @@ async def fail_job(
 ) -> None:
     """Mark a job as 'failed' with an error message."""
     await _update_job_status(
-        db, job_id, "failed",
+        db,
+        job_id,
+        "failed",
         error_message=error[:2000],
         completed_at=datetime.now(UTC),
     )
@@ -361,9 +361,7 @@ async def process_queue(db: AsyncSession) -> FineTuningJob | None:
     """
     # Check if any job is currently training/evaluating
     running_result = await db.execute(
-        select(FineTuningJob).where(
-            FineTuningJob.status.in_(["training", "evaluating"])
-        )
+        select(FineTuningJob).where(FineTuningJob.status.in_(["training", "evaluating"]))
     )
     if running_result.scalar_one_or_none() is not None:
         return None  # A job is already running
@@ -372,8 +370,7 @@ async def process_queue(db: AsyncSession) -> FineTuningJob | None:
     next_result = await db.execute(
         select(FineTuningJob)
         .where(FineTuningJob.status == "queued")
-        .order_by(FineTuningJob.queue_position.asc().nulls_last(),
-                  FineTuningJob.created_at.asc())
+        .order_by(FineTuningJob.queue_position.asc().nulls_last(), FineTuningJob.created_at.asc())
         .limit(1)
     )
     job = next_result.scalar_one_or_none()

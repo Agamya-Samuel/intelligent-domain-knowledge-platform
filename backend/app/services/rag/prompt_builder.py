@@ -39,10 +39,7 @@ DEFAULT_SYSTEM_PROMPT = (
 # ── Context block template ─────────────────────────────────────────
 
 _CONTEXT_BLOCK_TEMPLATE = (
-    "[Context {index}]\n"
-    "Source: {source_file}\n"
-    "{page_info}"
-    "Content: {content}\n"
+    "[Context {index}]\nSource: {source_file}\n{page_info}Content: {content}\n"
 )
 
 # ── User instruction template ────────────────────────────────────────

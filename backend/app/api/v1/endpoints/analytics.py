@@ -179,11 +179,12 @@ async def get_job_stats(
 
     # Average duration for completed jobs
     duration_result = await db.execute(
-        select(func.avg(
-            func.extract("epoch", FineTuningJob.completed_at) -
-            func.extract("epoch", FineTuningJob.created_at)
-        ))
-        .where(
+        select(
+            func.avg(
+                func.extract("epoch", FineTuningJob.completed_at)
+                - func.extract("epoch", FineTuningJob.created_at)
+            )
+        ).where(
             FineTuningJob.user_id == user.user_id,
             FineTuningJob.status == "completed",
             FineTuningJob.completed_at.isnot(None),
@@ -284,9 +285,7 @@ async def get_budget_trend(
     for row in reversed(rows):
         month_date = row.month
         month_str = (
-            month_date.strftime("%Y-%m")
-            if hasattr(month_date, "strftime")
-            else str(month_date)
+            month_date.strftime("%Y-%m") if hasattr(month_date, "strftime") else str(month_date)
         )
         points.append(
             BudgetTrendPoint(

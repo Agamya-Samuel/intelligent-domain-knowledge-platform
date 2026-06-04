@@ -228,6 +228,14 @@ async def add_dataset_source(
     if file and file.filename:
         stype = "upload"
         file_bytes = await file.read()
+        # Validate MIME type (defense-in-depth, supplements extension check)
+        from app.middleware.validation import validate_file_mime_type
+
+        try:
+            validate_file_mime_type(file_bytes)
+        except HTTPException:
+            # Re-raise validation errors
+            raise
         fsize = len(file_bytes)
         spath = f"uploads/{dataset_id}/{file.filename}"
         fname = file.filename

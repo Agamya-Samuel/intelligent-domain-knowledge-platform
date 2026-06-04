@@ -63,10 +63,7 @@ SYSTEM_PROMPT = (
 # ── Context Block Formatting ──────────────────────────────────────────
 
 _CONTEXT_BLOCK_TEMPLATE = (
-    "[Context {index}]\n"
-    "Source: {source_file}\n"
-    "{page_info}"
-    "Content: {content}\n"
+    "[Context {index}]\nSource: {source_file}\n{page_info}Content: {content}\n"
 )
 
 _USER_INSTRUCTION = (

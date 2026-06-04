@@ -86,6 +86,5 @@ class DatasetSource(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return (
-            f"<DatasetSource id={self.id!r} dataset={self.dataset_id!r} "
-            f"type={self.source_type!r}>"
+            f"<DatasetSource id={self.id!r} dataset={self.dataset_id!r} type={self.source_type!r}>"
         )

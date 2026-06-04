@@ -48,8 +48,13 @@ def _build_lora_config(config: dict[str, Any]) -> dict[str, Any]:
         "lora_alpha": config.get("lora_alpha", 128),
         "lora_dropout": config.get("lora_dropout", 0.05),
         "target_modules": [
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
         ],
         "bias": "none",
         "task_type": "CAUSAL_LM",
@@ -129,7 +134,9 @@ def train_qlora(
 
     logger.info(
         "Starting QLoRA training: model=%s job=%s epochs=%d",
-        hf_model_path, job_id, config.get("num_epochs", 3),
+        hf_model_path,
+        job_id,
+        config.get("num_epochs", 3),
     )
 
     # 1. Load base model via Unsloth (4-bit quantised)
@@ -173,9 +180,7 @@ def train_qlora(
     def tokenize_fn(examples: dict) -> dict:
         """Format each sample as instruction + input → output for causal LM."""
         texts = []
-        for inst, inp, out in zip(
-            examples["instruction"], examples["input"], examples["output"]
-        ):
+        for inst, inp, out in zip(examples["instruction"], examples["input"], examples["output"]):
             prompt = (
                 f"### Instruction:\n{inst}\n\n"
                 f"### Input:\n{inp}\n\n"
@@ -206,10 +211,12 @@ def train_qlora(
         def on_log(self, logs: dict) -> None:
             if "loss" in logs:
                 self.losses.append(logs["loss"])
-                loss_history.append({
-                    "step": len(self.losses),
-                    "loss": round(logs["loss"], 6),
-                })
+                loss_history.append(
+                    {
+                        "step": len(self.losses),
+                        "loss": round(logs["loss"], 6),
+                    }
+                )
 
     callback = LossCallback()
 

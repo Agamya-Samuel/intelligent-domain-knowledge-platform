@@ -287,7 +287,7 @@ class IDKPTool:
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The question to answer from the domain knowledge corpus.",
+                            "description": "The question to answer from the domain knowledge corpus.",  # noqa: E501
                         },
                         "model_variant": {
                             "type": "string",

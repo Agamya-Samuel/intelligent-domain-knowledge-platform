@@ -154,9 +154,7 @@ async def add_source(
             )
         )
         if existing.scalar_one_or_none():
-            raise ValueError(
-                f"Source already exists in dataset (hash: {content_hash[:12]}...)"
-            )
+            raise ValueError(f"Source already exists in dataset (hash: {content_hash[:12]}...)")
 
     source = DatasetSource(
         id=str(uuid.uuid4()),
@@ -181,9 +179,7 @@ async def add_source(
         id=str(uuid.uuid4()),
         dataset_id=dataset.id,
         version=dataset.version,
-        change_description=(
-            f"Added {source_type} source: {file_name or source_path}"
-        ),
+        change_description=(f"Added {source_type} source: {file_name or source_path}"),
         source_count=old_version + 1,
         sources_added=1,
     )
@@ -192,7 +188,10 @@ async def add_source(
     await db.flush()
     logger.info(
         "Source added to dataset %s (v%d→v%d): %s",
-        dataset.id, old_version, dataset.version, source_type,
+        dataset.id,
+        old_version,
+        dataset.version,
+        source_type,
     )
     return source
 

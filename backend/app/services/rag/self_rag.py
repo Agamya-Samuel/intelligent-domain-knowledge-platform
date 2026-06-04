@@ -156,8 +156,7 @@ async def compress_context(
     """
     effective_max_tokens = max_tokens or settings.RAG_MAX_CONTEXT_TOKENS
     effective_dedup = (
-        dedup_threshold if dedup_threshold is not None
-        else settings.RAG_CONTEXT_DEDUP_THRESHOLD
+        dedup_threshold if dedup_threshold is not None else settings.RAG_CONTEXT_DEDUP_THRESHOLD
     )
 
     if not results:

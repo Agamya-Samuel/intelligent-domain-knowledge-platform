@@ -65,7 +65,4 @@ class ChatMessage(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<ChatMessage id={self.id!r} session={self.session_id!r} "
-            f"role={self.role!r}>"
-        )
+        return f"<ChatMessage id={self.id!r} session={self.session_id!r} role={self.role!r}>"
