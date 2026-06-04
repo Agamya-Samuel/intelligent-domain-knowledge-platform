@@ -12,7 +12,9 @@ Implements TRD §9.2 input validation:
 from __future__ import annotations
 
 import html
+import ipaddress
 import re
+import socket
 import unicodedata
 from urllib.parse import urlparse
 
@@ -25,9 +27,17 @@ MAX_TEXT_INPUT_LENGTH = 10000
 MAX_TITLE_LENGTH = 500
 
 ALLOWED_FILE_EXTENSIONS = {
-    ".pdf", ".txt", ".md", ".docx", ".doc",
-    ".pptx", ".ppt", ".xlsx", ".xls",
-    ".csv", ".html",
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ppt",
+    ".xlsx",
+    ".xls",
+    ".csv",
+    ".html",
 }
 
 ALLOWED_URL_SCHEMES = {"http", "https"}
@@ -43,6 +53,28 @@ _INJECTION_PATTERNS = [
     re.compile(r"<\s*script", re.IGNORECASE),
     re.compile(r"javascript\s*:", re.IGNORECASE),
 ]
+
+# MIME types for file validation
+try:
+    import magic
+
+    _MAGIC_AVAILABLE = True
+except ImportError:
+    _MAGIC_AVAILABLE = False
+
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "text/html",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+}
 
 
 # ── Text Sanitization ─────────────────────────────────────────────────
@@ -174,8 +206,8 @@ def validate_url(url: str) -> str:
 
     Checks:
       - Scheme must be http or https
-      - No private/internal IP ranges
-      - No localhost references
+      - No private/internal IP ranges (hostname check)
+      - No private/internal IP ranges (DNS resolution check for rebinding protection)
 
     Args:
         url: The URL to validate.
@@ -196,12 +228,20 @@ def validate_url(url: str) -> str:
 
     hostname = parsed.hostname or ""
 
-    # Block localhost and common internal addresses
+    # Block localhost and common internal addresses (hostname string check)
     blocked_patterns = [
-        "localhost", "127.0.0.1", "0.0.0.0",
-        "::1", "fe80:", "169.254.",
-        "10.", "172.16.", "172.17.", "192.168.",
-        "metadata.google", "169.254.169.254",  # cloud metadata
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "::1",
+        "fe80:",
+        "169.254.",
+        "10.",
+        "172.16.",
+        "172.17.",
+        "192.168.",
+        "metadata.google",
+        "169.254.169.254",  # cloud metadata
     ]
 
     for pattern in blocked_patterns:
@@ -210,6 +250,30 @@ def validate_url(url: str) -> str:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"URL host '{hostname}' is not allowed (SSRF protection)",
             )
+
+    # DNS rebinding protection: resolve hostname and validate actual IP
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        resolved_ips = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for family, _, _, _, sockaddr in resolved_ips:
+            ip = sockaddr[0]
+            try:
+                addr = ipaddress.ip_address(ip)
+                if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=(
+                            f"URL resolves to private/internal IP {ip} (DNS rebinding protection)"
+                        ),
+                    )
+            except ValueError:
+                # Not an IP address, skip
+                continue
+    except socket.gaierror:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot resolve hostname '{hostname}'",
+        )
 
     return url
 
@@ -229,3 +293,47 @@ def detect_prompt_injection(text: str) -> list[str]:
         if pattern.search(text):
             matches.append(pattern.pattern)
     return matches
+
+
+def block_prompt_injection(text: str) -> None:
+    """Raise HTTPException(400) if prompt injection patterns are detected."""
+    matches = detect_prompt_injection(text)
+    if matches:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Prompt injection detected",
+                "patterns": [p.pattern for p in matches],
+            },
+        )
+
+
+def validate_file_mime_type(file_bytes: bytes) -> str:
+    """
+    Validate that a file's actual MIME type is allowed.
+
+    Args:
+        file_bytes: The file content as bytes.
+
+    Returns:
+        The detected MIME type.
+
+    Raises:
+        HTTPException(422) if MIME type is not allowed or python-magic is not available.
+    """
+    if not _MAGIC_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="MIME type validation not available — install python-magic package",
+        )
+
+    mime = magic.from_buffer(file_bytes, mime=True)
+    if mime not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"MIME type '{mime}' not allowed. "
+                f"Supported types: {', '.join(sorted(ALLOWED_MIME_TYPES))}"
+            ),
+        )
+    return mime

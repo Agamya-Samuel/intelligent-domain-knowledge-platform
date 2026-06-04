@@ -176,6 +176,11 @@ async def stream_chat(
     message_id = generate_uuid()
 
     try:
+        # Check for prompt injection
+        from app.middleware.validation import block_prompt_injection
+
+        block_prompt_injection(query)
+
         # Step 1: Get or create session
         session: ChatSession | None = None
         if session_id:
@@ -215,10 +220,12 @@ async def stream_chat(
         # Step 5: Send pre-retrieval citation events (source references)
         pre_citations: list[dict] = []
         for result in assembled.results:
-            pre_citations.append({
-                "source": result.metadata.get("source_file", "Unknown"),
-                "page": result.metadata.get("page_number"),
-            })
+            pre_citations.append(
+                {
+                    "source": result.metadata.get("source_file", "Unknown"),
+                    "page": result.metadata.get("page_number"),
+                }
+            )
         for citation in pre_citations:
             yield ("citation", citation)
 
@@ -266,12 +273,12 @@ async def stream_chat(
             },
         )
 
-    except Exception as exc:
+    except Exception:
         logger.exception("RAG chat pipeline failed")
         yield (
             "error",
             {
                 "error": "Chat generation failed",
-                "detail": str(exc),
+                "detail": "An internal error occurred. Please try again.",
             },
         )
