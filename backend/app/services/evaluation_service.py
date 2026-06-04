@@ -168,38 +168,58 @@ Score: <value between 0.0 and 1.0>"""
 
 
 async def _score_faithfulness(
-    question: str, contexts: list[str], answer: str,
+    question: str,
+    contexts: list[str],
+    answer: str,
 ) -> float | None:
     ctx = "\n---\n".join(contexts) if contexts else "[No context]"
-    return await _judge_score(_FAITHFULNESS_PROMPT.format(
-        question=question, contexts=ctx, answer=answer,
-    ))
+    return await _judge_score(
+        _FAITHFULNESS_PROMPT.format(
+            question=question,
+            contexts=ctx,
+            answer=answer,
+        )
+    )
 
 
 async def _score_context_relevance(
-    question: str, contexts: list[str],
+    question: str,
+    contexts: list[str],
 ) -> float | None:
     ctx = "\n---\n".join(contexts) if contexts else "[No context]"
-    return await _judge_score(_CONTEXT_RELEVANCE_PROMPT.format(
-        question=question, contexts=ctx,
-    ))
+    return await _judge_score(
+        _CONTEXT_RELEVANCE_PROMPT.format(
+            question=question,
+            contexts=ctx,
+        )
+    )
 
 
 async def _score_answer_relevance(
-    question: str, answer: str,
+    question: str,
+    answer: str,
 ) -> float | None:
-    return await _judge_score(_ANSWER_RELEVANCE_PROMPT.format(
-        question=question, answer=answer,
-    ))
+    return await _judge_score(
+        _ANSWER_RELEVANCE_PROMPT.format(
+            question=question,
+            answer=answer,
+        )
+    )
 
 
 async def _score_context_recall(
-    question: str, contexts: list[str], ground_truth: str,
+    question: str,
+    contexts: list[str],
+    ground_truth: str,
 ) -> float | None:
     ctx = "\n---\n".join(contexts) if contexts else "[No context]"
-    return await _judge_score(_CONTEXT_RECALL_PROMPT.format(
-        question=question, contexts=ctx, ground_truth=ground_truth,
-    ))
+    return await _judge_score(
+        _CONTEXT_RECALL_PROMPT.format(
+            question=question,
+            contexts=ctx,
+            ground_truth=ground_truth,
+        )
+    )
 
 
 # ── RAG pipeline runner for a single eval sample ────────────────────
@@ -282,8 +302,12 @@ async def _compute_metrics(
     """
     if not samples:
         return (
-            {"faithfulness": None, "context_relevance": None,
-             "answer_relevance": None, "context_recall": None},
+            {
+                "faithfulness": None,
+                "context_relevance": None,
+                "answer_relevance": None,
+                "context_recall": None,
+            },
             [],
         )
 
@@ -313,6 +337,7 @@ async def run_evaluation(
     model_id: str | None = None,
     model_variant: str = "base",
     job_id: str | None = None,
+    user_id: str,
 ) -> EvaluationRun:
     """
     Run a RAGAS-compatible evaluation and store the results.
@@ -332,14 +357,17 @@ async def run_evaluation(
     if dataset_size == 0:
         logger.warning("Evaluation dataset is empty — creating run with no metrics")
         eval_run = EvaluationRun(
+            user_id=user_id,
             run_type=run_type,
             status="completed",
             model_id=model_id,
             model_variant=model_variant,
             job_id=job_id,
             metrics={
-                "faithfulness": None, "context_relevance": None,
-                "answer_relevance": None, "context_recall": None,
+                "faithfulness": None,
+                "context_relevance": None,
+                "answer_relevance": None,
+                "context_recall": None,
                 "note": "Empty evaluation dataset",
             },
             dataset_size=0,
@@ -351,6 +379,7 @@ async def run_evaluation(
 
     # Create the run record in "running" state
     eval_run = EvaluationRun(
+        user_id=user_id,
         run_type=run_type,
         status="running",
         model_id=model_id,
@@ -364,7 +393,11 @@ async def run_evaluation(
 
     logger.info(
         "Starting evaluation run %s: type=%s model=%s variant=%s samples=%d",
-        eval_run.id, run_type, model_id, model_variant, dataset_size,
+        eval_run.id,
+        run_type,
+        model_id,
+        model_variant,
+        dataset_size,
     )
 
     try:
@@ -395,7 +428,8 @@ async def run_evaluation(
 
         # Step 2: Compute RAGAS-compatible metrics (LLM-as-judge)
         aggregate_metrics, per_sample_scores = await _compute_metrics(
-            valid_samples, valid_ground_truths,
+            valid_samples,
+            valid_ground_truths,
         )
 
         # Step 3: Update the run record with results
@@ -408,7 +442,9 @@ async def run_evaluation(
 
         logger.info(
             "Evaluation run %s completed in %.1fs: %s",
-            eval_run.id, duration, aggregate_metrics,
+            eval_run.id,
+            duration,
+            aggregate_metrics,
         )
 
     except Exception as exc:
@@ -417,8 +453,10 @@ async def run_evaluation(
         eval_run.error_message = str(exc)[:2000]
         eval_run.duration_seconds = duration
         eval_run.metrics = {
-            "faithfulness": None, "context_relevance": None,
-            "answer_relevance": None, "context_recall": None,
+            "faithfulness": None,
+            "context_relevance": None,
+            "answer_relevance": None,
+            "context_recall": None,
         }
         await db.flush()
         logger.exception("Evaluation run %s failed after %.1fs: %s", eval_run.id, duration, exc)
@@ -432,6 +470,7 @@ async def run_benchmark(
     model_ids: list[str],
     model_variant: str = "base",
     job_id: str | None = None,
+    user_id: str,
 ) -> list[EvaluationRun]:
     """
     Run a benchmark evaluation across multiple models.
@@ -453,12 +492,15 @@ async def run_benchmark(
 
     logger.info(
         "Starting benchmark %s across %d models: %s",
-        benchmark_id, len(model_ids), model_ids,
+        benchmark_id,
+        len(model_ids),
+        model_ids,
     )
 
     runs: list[EvaluationRun] = []
     for model_id in model_ids:
         eval_run = EvaluationRun(
+            user_id=user_id,
             run_type="benchmark",
             status="pending",
             model_id=model_id,
@@ -472,7 +514,10 @@ async def run_benchmark(
 
         # Run the evaluation for this model
         completed_run = await _run_benchmark_single(
-            db, eval_run=eval_run, model_id=model_id, model_variant=model_variant,
+            db,
+            eval_run=eval_run,
+            model_id=model_id,
+            model_variant=model_variant,
         )
         runs.append(completed_run)
 
@@ -525,7 +570,8 @@ async def _run_benchmark_single(
             raise RuntimeError(f"All RAG pipeline calls failed for model {model_id}")
 
         aggregate_metrics, per_sample_scores = await _compute_metrics(
-            valid_samples, valid_ground_truths,
+            valid_samples,
+            valid_ground_truths,
         )
 
         duration = round(time.monotonic() - start_time, 2)
@@ -537,7 +583,9 @@ async def _run_benchmark_single(
 
         logger.info(
             "Benchmark model %s completed in %.1fs: %s",
-            model_id, duration, aggregate_metrics,
+            model_id,
+            duration,
+            aggregate_metrics,
         )
 
     except Exception as exc:
@@ -546,8 +594,10 @@ async def _run_benchmark_single(
         eval_run.error_message = str(exc)[:2000]
         eval_run.duration_seconds = duration
         eval_run.metrics = {
-            "faithfulness": None, "context_relevance": None,
-            "answer_relevance": None, "context_recall": None,
+            "faithfulness": None,
+            "context_relevance": None,
+            "answer_relevance": None,
+            "context_recall": None,
         }
         await db.flush()
         logger.exception("Benchmark model %s failed: %s", model_id, exc)
@@ -607,16 +657,20 @@ async def compare_evaluations(
 
     deltas = {
         "faithfulness_delta": _delta(
-            cand_metrics["faithfulness"], base_metrics["faithfulness"],
+            cand_metrics["faithfulness"],
+            base_metrics["faithfulness"],
         ),
         "context_relevance_delta": _delta(
-            cand_metrics["context_relevance"], base_metrics["context_relevance"],
+            cand_metrics["context_relevance"],
+            base_metrics["context_relevance"],
         ),
         "answer_relevance_delta": _delta(
-            cand_metrics["answer_relevance"], base_metrics["answer_relevance"],
+            cand_metrics["answer_relevance"],
+            base_metrics["answer_relevance"],
         ),
         "context_recall_delta": _delta(
-            cand_metrics["context_recall"], base_metrics["context_recall"],
+            cand_metrics["context_recall"],
+            base_metrics["context_recall"],
         ),
     }
 

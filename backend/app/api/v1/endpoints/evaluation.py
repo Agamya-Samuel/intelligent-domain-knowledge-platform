@@ -56,7 +56,7 @@ def _model_name(model_id: str | None) -> str | None:
 )
 async def create_evaluation(
     body: EvaluationCreateRequest,
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> EvaluationRunResponse:
     """
@@ -71,6 +71,7 @@ async def create_evaluation(
         model_id=body.model_id,
         model_variant=body.model_variant,
         job_id=body.job_id,
+        user_id=user.user_id,
     )
     await db.commit()
     return EvaluationRunResponse.model_validate(eval_run)
@@ -83,16 +84,14 @@ async def create_evaluation(
 )
 async def list_evaluations(
     run_type: str | None = Query(default=None, description="Filter by run type"),
-    status_filter: str | None = Query(
-        default=None, alias="status", description="Filter by status"
-    ),
+    status_filter: str | None = Query(default=None, alias="status", description="Filter by status"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> EvaluationHistoryResponse:
     """List evaluation runs, most recent first. Supports filtering by type and status."""
-    stmt = select(EvaluationRun)
+    stmt = select(EvaluationRun).where(EvaluationRun.user_id == user.user_id)
 
     if run_type:
         stmt = stmt.where(EvaluationRun.run_type == run_type)
@@ -120,9 +119,7 @@ async def get_evaluation(
     db: AsyncSession = Depends(get_db),
 ) -> EvaluationRunResponse:
     """Get details of a specific evaluation run, including per-sample scores."""
-    result = await db.execute(
-        select(EvaluationRun).where(EvaluationRun.id == eval_id)
-    )
+    result = await db.execute(select(EvaluationRun).where(EvaluationRun.id == eval_id))
     eval_run = result.scalar_one_or_none()
     if not eval_run:
         raise HTTPException(
@@ -143,7 +140,7 @@ async def get_evaluation(
 )
 async def create_benchmark(
     body: BenchmarkRequest,
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> BenchmarkResponse:
     """
@@ -166,6 +163,7 @@ async def create_benchmark(
         model_ids=body.model_ids,
         model_variant=body.model_variant,
         job_id=body.job_id,
+        user_id=user.user_id,
     )
     await db.commit()
 

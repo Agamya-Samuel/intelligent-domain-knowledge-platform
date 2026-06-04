@@ -49,6 +49,12 @@ class EvaluationRun(Base, TimestampMixin):
         primary_key=True,
         default=generate_uuid,
     )
+    user_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="User who triggered the evaluation",
+    )
     run_type: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
