@@ -25,7 +25,6 @@ from dataclasses import dataclass
 
 from app.config import settings
 from app.services.rag.embeddings import embed_texts
-from app.services.rag.retriever import RetrievalResult
 from app.services.rag.vector_store import SearchResult
 
 logger = logging.getLogger(__name__)

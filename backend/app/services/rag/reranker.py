@@ -121,7 +121,7 @@ async def rerank(
         )
         return result
 
-    except Exception as exc:
+    except Exception:
         logger.exception("Cross-encoder reranking failed — falling back to original ranking")
         # Fallback: return original top-K without reranking
         return candidates[:effective_top_k]

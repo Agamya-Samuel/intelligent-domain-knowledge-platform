@@ -243,7 +243,7 @@ async def retrieve(
         all_results: list[SearchResult] = []
 
         if hybrid_active:
-            from app.services.rag.hybrid_retriever import hybrid_search, reciprocal_rank_fusion
+            from app.services.rag.hybrid_retriever import reciprocal_rank_fusion
 
             # Search with each query vector variant
             variant_results: list[list[SearchResult]] = []

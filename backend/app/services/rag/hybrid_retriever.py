@@ -145,10 +145,10 @@ async def _build_index() -> _BM25Index:
         idx.avg_dl = sum(idx.doc_lengths.values()) / idx.n_docs
 
     # Precompute IDF values
-    N = idx.n_docs
+    n_docs_total = idx.n_docs
     for token, posting in idx.inverted.items():
         df = len(posting)
-        idx._idf_cache[token] = math.log((N - df + 0.5) / (df + 0.5) + 1.0)
+        idx._idf_cache[token] = math.log((n_docs_total - df + 0.5) / (df + 0.5) + 1.0)
 
     _index = idx
     logger.info(
