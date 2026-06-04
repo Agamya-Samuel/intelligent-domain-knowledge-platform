@@ -84,7 +84,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://idkp:idkp_secret@localhost:5432/idkp
           AUTH_SECRET: ci-test-secret
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ -v --tb=short
 
   # ============================================================
   build:
