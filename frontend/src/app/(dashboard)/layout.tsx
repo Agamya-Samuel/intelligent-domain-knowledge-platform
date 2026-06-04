@@ -2,15 +2,25 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { SidebarUser } from "@/components/layout/sidebar-user";
 import { cn } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
+import {
+  MessageSquare,
+  FolderOpen,
+  Bot,
+  Wrench,
+  Scale,
+  BarChart3,
+  Settings,
+} from "lucide-react";
 
 const navItems = [
-  { href: "/chat", label: "Chat", icon: "💬" },
-  { href: "/datasets", label: "Datasets", icon: "📁" },
-  { href: "/models", label: "Models", icon: "🤖" },
-  { href: "/fine-tune", label: "Fine-tune", icon: "🔧" },
-  { href: "/compare", label: "Compare", icon: "⚖️" },
-  { href: "/analytics", label: "Analytics", icon: "📊" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/datasets", label: "Datasets", icon: FolderOpen },
+  { href: "/models", label: "Models", icon: Bot },
+  { href: "/fine-tune", label: "Fine-tune", icon: Wrench },
+  { href: "/compare", label: "Compare", icon: Scale },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 /**
@@ -33,7 +43,7 @@ export default function DashboardLayout({
         </Link>
 
         <nav className="flex flex-1 flex-col gap-1">
-          {navItems.map(({ href, label, icon }) => (
+          {navItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
@@ -42,7 +52,7 @@ export default function DashboardLayout({
                 "justify-start gap-2 font-normal"
               )}
             >
-              <span>{icon}</span>
+              <Icon className="size-4" />
               {label}
             </Link>
           ))}
