@@ -7,6 +7,7 @@ const navItems = [
   { href: "/datasets", label: "Datasets", icon: "📁" },
   { href: "/models", label: "Models", icon: "🤖" },
   { href: "/fine-tune", label: "Fine-tune", icon: "🔧" },
+  { href: "/compare", label: "Compare", icon: "⚖️" },
   { href: "/analytics", label: "Analytics", icon: "📊" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ] as const;
