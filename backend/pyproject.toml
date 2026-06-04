@@ -16,7 +16,8 @@ dependencies = [
     "alembic>=1.14.0",
     "pydantic-settings>=2.7.0",
     "redis>=5.2.0",
-    "python-jose[cryptography]>=3.3.0",
+    "PyJWT>=2.8.0",
+    "cryptography>=42.0.0",
     "httpx>=0.28.0",
     # Document ingestion
     "pypdf>=5.1.0",
