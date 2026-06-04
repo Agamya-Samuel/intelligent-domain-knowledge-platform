@@ -34,6 +34,7 @@ from app.services.dataset_service import (
     get_dataset,
     list_datasets,
     list_sources,
+    process_url_source,
     update_dataset,
 )
 
@@ -271,11 +272,16 @@ async def add_dataset_source(
             detail=str(exc),
         ) from exc
 
+    # Process URL sources synchronously during the request
+    if stype == "url":
+        source = await process_url_source(source)
+        await db.flush()
+
     return DatasetSourceCreateResponse(
         source_id=source.id,
         dataset_version=ds.version,
         file_name=fname,
-        status="processing",
+        status="processed" if source.processed else "failed",
     )
 
 
