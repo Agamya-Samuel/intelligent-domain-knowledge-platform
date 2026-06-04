@@ -163,12 +163,15 @@ async def trigger_fine_tune(
 )
 async def get_fine_tune_status(
     job_id: str,
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> FineTuneStatusResponse:
     """Get the current status, metrics, and details of a fine-tuning job."""
     result = await db.execute(
-        select(FineTuningJob).where(FineTuningJob.id == job_id)
+        select(FineTuningJob).where(
+            FineTuningJob.id == job_id,
+            FineTuningJob.user_id == user.user_id,
+        )
     )
     job = result.scalar_one_or_none()
     if not job:
@@ -199,9 +202,7 @@ async def list_fine_tune_history(
         .limit(limit)
     )
     jobs = result.scalars().all()
-    return FineTuneHistoryResponse(
-        jobs=[FineTuneStatusResponse.model_validate(j) for j in jobs]
-    )
+    return FineTuneHistoryResponse(jobs=[FineTuneStatusResponse.model_validate(j) for j in jobs])
 
 
 # ── Cost Estimation ──────────────────────────────────────────────────────

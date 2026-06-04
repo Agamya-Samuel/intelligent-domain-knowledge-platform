@@ -44,8 +44,10 @@ async def fine_tune_ws(websocket: WebSocket, job_id: str) -> None:
       4. Keep connection alive; relay events from training service
       5. Clean up on disconnect
     """
-    # 1. Authenticate
-    token = websocket.query_params.get("token", "")
+    # 1. Authenticate via Sec-WebSocket-Protocol header (preferred) or query param (fallback)
+    token = websocket.headers.get("Sec-WebSocket-Protocol", "")
+    if not token:
+        token = websocket.query_params.get("token", "")
     user_id: str | None = None
     if token:
         try:
@@ -58,10 +60,13 @@ async def fine_tune_ws(websocket: WebSocket, job_id: str) -> None:
         await websocket.close(code=4001, reason="Authentication required")
         return
 
-    # 2. Validate job exists
+    # 2. Validate job exists and belongs to user
     async with get_db_context() as db:
         result = await db.execute(
-            select(FineTuningJob).where(FineTuningJob.id == job_id)
+            select(FineTuningJob).where(
+                FineTuningJob.id == job_id,
+                FineTuningJob.user_id == user_id,
+            )
         )
         job = result.scalar_one_or_none()
         if not job:
@@ -70,18 +75,20 @@ async def fine_tune_ws(websocket: WebSocket, job_id: str) -> None:
 
         # Send initial job state
         await websocket.accept()
-        await websocket.send_json({
-            "type": "connected",
-            "job_id": job_id,
-            "data": {
-                "status": job.status,
-                "model_id": job.model_id,
-                "dataset_id": job.dataset_id,
-                "queue_position": job.queue_position,
-                "training_metrics": job.training_metrics,
-                "eval_report": job.eval_report,
-            },
-        })
+        await websocket.send_json(
+            {
+                "type": "connected",
+                "job_id": job_id,
+                "data": {
+                    "status": job.status,
+                    "model_id": job.model_id,
+                    "dataset_id": job.dataset_id,
+                    "queue_position": job.queue_position,
+                    "training_metrics": job.training_metrics,
+                    "eval_report": job.eval_report,
+                },
+            }
+        )
 
     # 3. Register with connection manager
     await ws_manager.connect(job_id, websocket)
