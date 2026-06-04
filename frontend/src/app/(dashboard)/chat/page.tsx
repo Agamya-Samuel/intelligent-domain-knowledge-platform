@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { fetchWithAuth, getSessionToken } from "@/lib/api";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -43,38 +44,6 @@ function parseSSE(text: string): { event: string; data: string }[] {
     }
   }
   return events;
-}
-
-/* ── API Helper ────────────────────────────────────────────────────── */
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-/**
- * Extract the Auth.js v5 session token from cookies.
- * Auth.js stores an encrypted JWE in "next-auth.session-token" cookie.
- * The backend decodes this with the shared AUTH_SECRET.
- */
-function getSessionToken(): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("next-auth.session-token="));
-  return match ? match.split("=")[1] : undefined;
-}
-
-async function fetchWithAuth(
-  url: string,
-  options: RequestInit = {},
-): Promise<Response> {
-  const token = getSessionToken();
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...options.headers,
-  };
-  if (token) {
-    (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-  }
-  return fetch(`${API_URL}${url}`, { ...options, headers, credentials: "include" });
 }
 
 /* ── Chat Page Component ───────────────────────────────────────────── */

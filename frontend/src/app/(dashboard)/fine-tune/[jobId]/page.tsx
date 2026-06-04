@@ -20,6 +20,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { fetchWithAuth, getApiUrl, getSessionToken } from "@/lib/api";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -62,19 +63,6 @@ interface JobState {
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const WS_URL = API_URL.replace(/^http/, "ws");
-
-/* ── Helpers ───────────────────────────────────────────────────────── */
-
-function getSessionToken(): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("next-auth.session-token="));
-  return match ? match.split("=")[1] : undefined;
-}
-
 const STATUS_COLORS: Record<string, string> = {
   queued: "text-yellow-600",
   training: "text-blue-600",
@@ -103,11 +91,7 @@ export default function JobDetailPage() {
   // Fetch initial job state via REST
   const fetchJob = useCallback(async () => {
     try {
-      const token = getSessionToken();
-      const res = await fetch(`${API_URL}/api/v1/fine-tune/status/${jobId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: "include",
-      });
+      const res = await fetchWithAuth(`/api/v1/fine-tune/status/${jobId}`);
       if (res.ok) {
         const data = await res.json();
         setJob({
@@ -131,7 +115,8 @@ export default function JobDetailPage() {
     const token = getSessionToken();
     if (!token || !jobId) return;
 
-    const ws = new WebSocket(`${WS_URL}/ws/fine-tune/${jobId}?token=${token}`);
+    const wsUrl = getApiUrl().replace(/^http/, "ws");
+    const ws = new WebSocket(`${wsUrl}/ws/fine-tune/${jobId}?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => setWsConnected(true);
