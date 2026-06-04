@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
+import { SidebarUser } from "@/components/layout/sidebar-user";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -14,7 +15,6 @@ const navItems = [
 
 /**
  * Dashboard layout — persistent sidebar + main content area.
- * Auth session provider wrapper added in Task 4.
  */
 export default function DashboardLayout({
   children,
@@ -48,12 +48,8 @@ export default function DashboardLayout({
           ))}
         </nav>
 
-        {/* Footer: user info placeholder */}
-        <div className="mt-auto border-t pt-3">
-          <p className="px-2 text-xs text-muted-foreground">
-            Signed in as <span className="font-medium">—</span>
-          </p>
-        </div>
+        {/* Footer: user info from session */}
+        <SidebarUser />
       </aside>
 
       {/* Main content */}
