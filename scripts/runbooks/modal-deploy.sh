@@ -46,6 +46,7 @@ DEPLOY_ALL=true
 DEPLOY_INFERENCE=false
 DEPLOY_EMBEDDINGS=false
 DEPLOY_RERANKER=false
+DEPLOY_TRAINING=false
 SHOW_STATUS=false
 
 for arg in "$@"; do
@@ -54,6 +55,7 @@ for arg in "$@"; do
         --inference)   DEPLOY_ALL=false; DEPLOY_INFERENCE=true ;;
         --embeddings)  DEPLOY_ALL=false; DEPLOY_EMBEDDINGS=true ;;
         --reranker)    DEPLOY_ALL=false; DEPLOY_RERANKER=true ;;
+        --training)    DEPLOY_ALL=false; DEPLOY_TRAINING=true ;;
         --status)      SHOW_STATUS=true; DEPLOY_ALL=false ;;
     esac
 done
@@ -65,7 +67,8 @@ if [[ "$SHOW_STATUS" == true ]]; then
         error "Modal CLI not installed — install with: pip install modal"
     fi
 
-    info "App: idkp-production"
+    info "  App: idkp-production"
+    info "  App: idkp-train (QLoRA training)"
     echo ""
 
     # List all functions in the app
@@ -116,7 +119,23 @@ if [[ "$DEPLOY_ALL" == true ]] || [[ "$DEPLOY_EMBEDDINGS" == true ]]; then
     info "Embeddings function deployed"
 fi
 
-# ── Deploy reranker (cross-encoder on T4) ──────────────────────────
+# ── Deploy training (QLoRA on A10G) ────────────────────────────────────
+if [[ "$DEPLOY_ALL" == true ]] || [[ "$DEPLOY_TRAINING" == true ]]; then
+    step "Deploying training function (QLoRA on A10G)..."
+
+    TRAINING_SCRIPT="$PROJECT_ROOT/backend/app/services/modal_train.py"
+    if [[ ! -f "$TRAINING_SCRIPT" ]]; then
+        error "Modal training script not found at $TRAINING_SCRIPT"
+    fi
+
+    cd "$PROJECT_ROOT"
+    modal deploy "$TRAINING_SCRIPT" 2>&1 | tee /dev/stderr || {
+        error "Training deployment failed — check Modal logs"
+    }
+    info "Training function deployed"
+fi
+
+# ── Deploy reranker (cross-encoder on T4) ──────────────────────────────
 if [[ "$DEPLOY_ALL" == true ]] || [[ "$DEPLOY_RERANKER" == true ]]; then
     step "Deploying reranker function (bge-reranker on T4)..."
 
@@ -137,6 +156,7 @@ info "  Monitor logs:"
 info "    modal app logs idkp-production.inference"
 info "    modal app logs idkp-production.embeddings"
 info "    modal app logs idkp-production.reranker"
+info "    modal app logs idkp-train.train_qlora_fn"
 echo ""
 info "  Check costs:  modal cost"
 info "  App status:   ./scripts/runbooks/modal-deploy.sh --status"
