@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.fine_tuning_job import FineTuningJob
 from app.services.budget_service import record_spend
-from app.services.training_data_service import export_training_json, prepare_training_data
+from app.services.training_data_service import export_training_samples_json, prepare_training_data
 
 logger = logging.getLogger(__name__)
 
@@ -77,18 +77,38 @@ def _record_checkpoint_path(job_id: str) -> str:
 
 def _get_modal_client():
     """
-    Return a configured Modal client for submitting training functions.
+    Return an authenticated Modal client for submitting training functions.
 
-    In production this calls real Modal functions; in development it
-    returns a stub that simulates the call and returns a mock function_id.
+    Authenticates using ``MODAL_TOKEN_ID`` and ``MODAL_TOKEN_SECRET`` from
+    settings.  The Modal SDK also reads ``~/.modal.toml`` or the same env
+    vars, so we set them before importing so the SDK picks them up.
+
+    Raises ``RuntimeError`` when the SDK is missing or no credentials are
+    configured, so callers can propagate a clear failure to the job record
+    instead of silently entering a dry-run mode that never reaches Modal.
     """
+    # Propagate settings → env vars so the Modal SDK can pick them up
+    import os
+    if settings.MODAL_TOKEN_ID:
+        os.environ.setdefault("MODAL_TOKEN_ID", settings.MODAL_TOKEN_ID)
+    if settings.MODAL_TOKEN_SECRET:
+        os.environ.setdefault("MODAL_TOKEN_SECRET", settings.MODAL_TOKEN_SECRET)
+
     try:
         import modal  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError(
+            "Modal SDK is not installed. Install it with: pip install modal"
+        ) from exc
 
-        return modal
-    except ImportError:
-        logger.warning("modal SDK not installed — training will run in dry-run mode")
-        return None
+    if not settings.MODAL_TOKEN_ID or not settings.MODAL_TOKEN_SECRET:
+        raise RuntimeError(
+            "MODAL_TOKEN_ID and MODAL_TOKEN_SECRET must be set in environment / .env "
+            "for fine-tuning jobs to reach Modal. "
+            "Get credentials at https://modal.com/settings/tokens"
+        )
+
+    return modal
 
 
 # ── Training job orchestration ───────────────────────────────────────────
@@ -124,21 +144,16 @@ async def submit_training_job(
     try:
         # 2. Prepare and upload training data
         data = await prepare_training_data(db, job.dataset_id)
-        training_json = export_training_json(data)
+        training_json = export_training_samples_json(data)
         s3_data_path = _upload_training_data(job_id, training_json)
 
         # 3. Build Modal config
         checkpoint_prefix = _record_checkpoint_path(job_id)
         modal_config = _build_modal_config(job, checkpoint_prefix)
 
-        # 4. Submit to Modal
+        # 4. Submit to Modal — raises RuntimeError if SDK/credentials are missing
         modal = _get_modal_client()
-        if modal:
-            function_id = _submit_modal_job(modal, modal_config, s3_data_path, job_id)
-        else:
-            # Dry-run mode: simulate a function_id
-            function_id = f"dryrun-{job_id}-{int(time.time())}"
-            logger.info("Dry-run mode: simulated Modal function_id=%s", function_id)
+        function_id = await _submit_modal_job(modal, modal_config, s3_data_path, job_id)
 
         # 5. Update job with modal_function_id and training metadata
         await db.execute(
@@ -220,7 +235,7 @@ def _build_modal_config(
     }
 
 
-def _submit_modal_job(
+async def _submit_modal_job(
     modal: Any,
     config: dict[str, Any],
     s3_data_path: str,
@@ -229,24 +244,48 @@ def _submit_modal_job(
     """
     Submit the QLoRA training function to Modal.
 
-    The Modal function is expected to be pre-deployed as `idkp-train`.
-    We call it with the training config and data path; it returns a
-    call_id that we store as the modal_function_id.
+    Uses ``modal.Function.from_name`` to look up the deployed function
+    in the ``idkp-train`` app, then spawns it asynchronously.
+    ``.spawn.aio()`` (async variant) returns a ``FunctionCall`` whose
+    ``object_id`` we persist so we can poll/cancel later via
+    ``FunctionCall.from_id``.
+
+    Raises ``RuntimeError`` if the ``idkp-train`` app has not been deployed.
     """
-    # In a real deployment this calls:
-    #   train_fn = modal.Function.lookup("idkp-train", "train_qlora")
-    #   call_id = train_fn.spawn(config, s3_data_path, job_id)
-    #   return str(call_id)
-    #
-    # For now we return a placeholder — the actual Modal function is
-    # defined in the separate modal_train.py module.
     logger.info(
         "Submitting Modal training job: gpu=%s model=%s data=%s",
         config["gpu"],
         config["model_id"],
         s3_data_path,
     )
-    return f"modal-{job_id}-{int(time.time())}"
+
+    # Look up the deployed Modal function by app name + function name.
+    # from_name() is lazy — the actual server round-trip happens on .spawn().
+    train_fn = modal.Function.from_name("idkp-train", "train_qlora_fn")
+
+    # Override GPU if the job config specifies a different tier
+    gpu = config.get("gpu")
+    if gpu:
+        train_fn = train_fn.with_options(gpu=gpu)
+
+    try:
+        # Spawn asynchronously — returns a FunctionCall object
+        function_call = await train_fn.spawn.aio(config, s3_data_path, job_id)
+        call_id = function_call.object_id
+    except Exception as exc:
+        error_msg = str(exc)
+        if "not found" in error_msg.lower() or "not deployed" in error_msg.lower():
+            raise RuntimeError(
+                f"Modal app 'idkp-train' is not deployed. "
+                f"Deploy it first with: modal deploy backend/app/services/modal_train.py\n"
+                f"Original error: {error_msg}"
+            ) from exc
+        raise RuntimeError(
+            f"Failed to spawn Modal training function: {error_msg}"
+        ) from exc
+
+    logger.info("Modal job spawned: call_id=%s", call_id)
+    return call_id
 
 
 # ── Job state machine ────────────────────────────────────────────────────
@@ -349,6 +388,77 @@ async def fail_job(
     logger.warning("Job %s failed: %s", job_id, error[:200])
 
 
+async def cancel_training_job(
+    db: AsyncSession,
+    job: FineTuningJob,
+) -> None:
+    """
+    Cancel an active fine-tuning job.
+
+    Transitions queued/training/evaluating jobs to 'cancelled'.
+    Attempts to stop the Modal function if one is running.
+    """
+    cancellable_statuses = {"queued", "training", "evaluating"}
+    if job.status not in cancellable_statuses:
+        raise ValueError(
+            f"Job '{job.id}' is in status '{job.status}' and cannot be cancelled. "
+            f"Only {', '.join(sorted(cancellable_statuses))} jobs can be cancelled."
+        )
+
+    # Attempt to stop the Modal function if running
+    if job.modal_function_id and job.status in ("training", "evaluating"):
+        try:
+            modal = _get_modal_client()
+            # Re-instantiate the FunctionCall from its stored object_id
+            # and cancel the execution on Modal infrastructure.
+            fc = modal.FunctionCall.from_id(job.modal_function_id)
+            fc.cancel(terminate_containers=True)
+            logger.info(
+                "Cancelled Modal function %s for job %s",
+                job.modal_function_id,
+                job.id,
+            )
+        except RuntimeError:
+            # Modal not configured — nothing to cancel on the infrastructure side
+            logger.warning(
+                "Modal not configured — cannot cancel remote function for job %s", job.id
+            )
+        except Exception as exc:
+            logger.warning("Failed to cancel Modal function for job %s: %s", job.id, exc)
+
+    await _update_job_status(
+        db,
+        job.id,
+        "cancelled",
+        error_message="Cancelled by user",
+        completed_at=datetime.now(UTC),
+    )
+    logger.info("Job %s cancelled by user", job.id)
+
+
+async def delete_training_job(
+    db: AsyncSession,
+    job: FineTuningJob,
+) -> None:
+    """
+    Permanently delete a job from the database.
+
+    Only terminal status jobs (completed, failed, cancelled) can be deleted.
+    Active jobs must be cancelled first.
+    """
+    deletable_statuses = {"completed", "failed", "cancelled"}
+    if job.status not in deletable_statuses:
+        raise ValueError(
+            f"Job '{job.id}' is in status '{job.status}' and cannot be deleted. "
+            f"Only {', '.join(sorted(deletable_statuses))} jobs can be deleted. "
+            f"Cancel the job first if it is still active."
+        )
+
+    await db.delete(job)
+    await db.flush()
+    logger.info("Job %s deleted by user", job.id)
+
+
 # ── Queue processing ─────────────────────────────────────────────────────
 
 
@@ -379,3 +489,102 @@ async def process_queue(db: AsyncSession) -> FineTuningJob | None:
 
     logger.info("Queue: starting job %s (queue_pos=%s)", job.id, job.queue_position)
     return job
+
+
+# ── Modal job completion polling ─────────────────────────────────────────
+
+
+async def poll_modal_jobs(db: AsyncSession) -> list[str]:
+    """
+    Check all jobs in ``training`` / ``evaluating`` status for Modal
+    function completion.
+
+    Uses the stored ``modal_function_id`` to instantiate a
+    ``FunctionCall.from_id`` and call ``.get(timeout=0)`` (non-blocking).
+    If the call has returned, the job is finalized; if a timeout is raised
+    the job is still running and is skipped for this cycle.
+
+    Returns a list of job IDs that were resolved (completed or failed).
+    """
+    result = await db.execute(
+        select(FineTuningJob).where(
+            FineTuningJob.status.in_(["training", "evaluating"]),
+            FineTuningJob.modal_function_id.isnot(None),
+        )
+    )
+    jobs = result.scalars().all()
+    resolved_ids: list[str] = []
+
+    if not jobs:
+        return resolved_ids
+
+    try:
+        modal = _get_modal_client()
+    except RuntimeError:
+        logger.warning("Modal SDK unavailable — skipping job completion poll")
+        return resolved_ids
+
+    for job in jobs:
+        try:
+            fc = modal.FunctionCall.from_id(job.modal_function_id)
+            call_result = fc.get(timeout=0)
+
+            if call_result and isinstance(call_result, dict):
+                await db.execute(
+                    update(FineTuningJob)
+                    .where(FineTuningJob.id == job.id)
+                    .values(
+                        status="completed",
+                        training_metrics=call_result.get("metrics", {}),
+                        lora_adapter_path=call_result.get("adapter_path"),
+                        cost=call_result.get("cost"),
+                        completed_at=datetime.now(UTC),
+                    )
+                )
+                await db.flush()
+
+                if call_result.get("cost"):
+                    await record_spend(db, job.id, call_result["cost"])
+
+                logger.info(
+                    "Job %s completed via Modal poll. adapter=%s loss=%s",
+                    job.id,
+                    call_result.get("adapter_path"),
+                    call_result.get("final_loss"),
+                )
+            else:
+                await finalize_job(db, job.id)
+
+        except Exception as exc:
+            exc_str = str(exc)
+            if _is_still_running(exc_str):
+                continue
+
+            await fail_job(db, job.id, exc_str[:2000])
+            logger.warning("Modal job %s failed during poll: %s", job.id, exc_str[:200])
+
+        resolved_ids.append(job.id)
+
+    return resolved_ids
+
+
+def _is_still_running(exc_str: str) -> bool:
+    """
+    Return True if the exception string indicates the Modal function is still
+    running (hasn't returned yet).
+
+    Modal raises various errors for in-progress calls — the message typically
+    contains phrases like ``timed out`` or ``not ready``.
+    """
+    lower = exc_str.lower()
+    return any(
+        phrase in lower
+        for phrase in (
+            "timed out",
+            "timeout",
+            "not ready",
+            "still running",
+            "hasn't returned",
+            "in progress",
+        )
+    )

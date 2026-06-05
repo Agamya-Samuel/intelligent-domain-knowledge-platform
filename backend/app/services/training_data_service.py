@@ -140,8 +140,10 @@ async def _load_dataset_chunks(
     """
     Load all processed document chunks belonging to a dataset's sources.
 
-    Matches dataset sources (by S3 path) to documents (by s3_key),
-    then returns their associated chunks.
+    Uses a two-pronged matching strategy:
+      1. Match DatasetSource.source_path to Document.s3_key (S3-based sources)
+      2. Match DatasetSource.file_name to Document.file_name (upload-based sources)
+    Also falls back to matching by document ID if the source_path contains one.
 
     Returns a list of dicts with keys: content, metadata, source_id, domain.
     """
@@ -154,17 +156,44 @@ async def _load_dataset_chunks(
     )
     sources = src_result.scalars().all()
     if not sources:
-        return []
+        # Also try unprocessed sources — they may have been processed via the
+        # document ingestion pipeline but not marked as processed here yet.
+        src_result = await db.execute(
+            select(DatasetSource).where(
+                DatasetSource.dataset_id == dataset_id,
+            )
+        )
+        sources = src_result.scalars().all()
+        if not sources:
+            return []
 
+    # Collect all possible identifiers for matching
     source_paths = {s.source_path for s in sources if s.source_path}
+    source_file_names = {s.file_name for s in sources if s.file_name}
 
-    # 2. Find documents whose s3_key matches any source path
-    if not source_paths:
+    if not source_paths and not source_file_names:
         return []
+
+    # 2. Find documents by matching s3_key, file_name, or source_path containing doc id
+    from sqlalchemy import or_
+
+    conditions = []
+    if source_paths:
+        conditions.append(Document.s3_key.in_(source_paths))
+    if source_file_names:
+        conditions.append(Document.file_name.in_(source_file_names))
+    # Also try matching source_path that looks like "uploads/{dataset_id}/{filename}"
+    for sp in source_paths:
+        if "/" in sp:
+            parts = sp.split("/")
+            if len(parts) >= 1:
+                possible_filename = parts[-1]
+                if possible_filename:
+                    conditions.append(Document.file_name == possible_filename)
 
     doc_result = await db.execute(
         select(Document).where(
-            Document.s3_key.in_(source_paths),
+            or_(*conditions),
             Document.status == "completed",
         )
     )
@@ -378,6 +407,11 @@ async def prepare_training_data(
 def export_training_json(data: dict[str, Any]) -> str:
     """Serialise the training data dict to a JSON string for S3 upload or download."""
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def export_training_samples_json(data: dict[str, Any]) -> str:
+    """Serialise only the samples list as a flat JSON array for training upload."""
+    return json.dumps(data["samples"], ensure_ascii=False, indent=2)
 
 
 async def estimate_training_cost(
