@@ -38,10 +38,10 @@ MODEL_DIR = "/models"
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "vllm==0.6.6.post1",
-        "torch==2.4.1",
-        "sentence-transformers==3.3.1",
-        "FlagEmbedding==1.3.2",
+        "vllm>=0.6.6.post1",
+        "torch>=2.4.1",
+        "sentence-transformers>=3.3.1",
+        "FlagEmbedding>=1.3.2",
         "boto3>=1.35.0",
     )
 )
@@ -54,18 +54,18 @@ gpu_image = (
 @app.function(
     image=gpu_image,
     gpu="A10G",
-    container_timeout=3600,
-    allow_concurrent_inputs=100,
     volumes={MODEL_DIR: model_volume},
     secrets=[modal.Secret.from_name("idkp-secrets")],
 )
+@modal.concurrent(max_inputs=100)
 @modal.asgi_app()
 def inference():
     """
     vLLM inference server with LoRA hot-swap.
 
     Serves an OpenAI-compatible API for text generation.
-    Supports loading LoRA adapters at runtime via /v1/load/adapter.
+    Supports loading LoRA adapters from the Modal Volume at
+    /models/adapters/latest (symlink to the most recent fine-tuning job).
 
     GPU: NVIDIA A10G (24GB) — supports up to 14B models.
     Scale: 0 (cold start) to 4 concurrent containers.
@@ -81,6 +81,16 @@ def inference():
     if Path(model_path).exists():
         model_name = model_path
 
+    # Ensure the adapters symlink exists (points to latest fine-tuning job)
+    adapters_dir = Path(f"{MODEL_DIR}/adapters")
+    adapters_dir.mkdir(parents=True, exist_ok=True)
+    latest_link = adapters_dir / "latest"
+    if not latest_link.exists():
+        # Find the most recent adapter directory
+        adapters = sorted([d for d in adapters_dir.iterdir() if d.is_dir() and d.name != "latest"])
+        if adapters:
+            latest_link.symlink_to(adapters[-1])
+
     # vLLM configuration optimized for A10G
     engine_args = [
         "--host", "0.0.0.0",
@@ -90,7 +100,7 @@ def inference():
         "--max-model-len", "4096",
         "--gpu-memory-utilization", "0.90",
         "--enable-lora",
-        "--lora-modules", "default-adapters=/adapters",
+        "--lora-modules", "default-adapters=/models/adapters/latest",
         "--max-lora-rank", "64",
     ]
 
@@ -107,10 +117,9 @@ def inference():
 @app.function(
     image=gpu_image,
     gpu="T4",
-    container_timeout=600,
-    allow_concurrent_inputs=20,
     secrets=[modal.Secret.from_name("idkp-secrets")],
 )
+@modal.concurrent(max_inputs=20)
 @modal.web_server(port=8000)
 def embeddings():
     """
@@ -179,10 +188,9 @@ def embeddings():
 @app.function(
     image=gpu_image,
     gpu="T4",
-    container_timeout=300,
-    allow_concurrent_inputs=20,
     secrets=[modal.Secret.from_name("idkp-secrets")],
 )
+@modal.concurrent(max_inputs=20)
 @modal.web_server(port=8000)
 def reranker():
     """
