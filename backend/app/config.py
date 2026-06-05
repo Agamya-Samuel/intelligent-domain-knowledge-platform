@@ -111,6 +111,8 @@ class Settings(BaseSettings):
     # ── LLM Inference (Modal vLLM) ────────────────────────────────
     LLM_BASE_URL: str = "http://localhost:8001"  # vLLM OpenAI-compatible endpoint
     LLM_MODEL: str = "Qwen/Qwen2.5-7B-Instruct"
+    LLM_FINETUNED_ADAPTER: str = ""
+    # LoRA adapter name for finetuned variant; empty = fallback to base model
     LLM_MAX_TOKENS: int = 1024
     LLM_TEMPERATURE: float = 0.3
     LLM_STREAM: bool = True

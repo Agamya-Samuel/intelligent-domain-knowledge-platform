@@ -40,6 +40,9 @@ dependencies = [
     "langfuse>=2.50.0",
     # WebSocket support
     "websockets>=13.0",
+    # Modal GPU training + S3 data upload
+    "modal>=1.4.3",
+    "boto3>=1.35.0",
 ]
 
 [project.optional-dependencies]
