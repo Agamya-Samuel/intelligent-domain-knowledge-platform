@@ -14,7 +14,7 @@ POST /api/fine-tune/training-data/export — full export as JSON for S3 upload.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,12 @@ from app.services.training_data_service import (
     estimate_training_cost,
     prepare_training_data,
 )
+from app.services.training_service import (
+    cancel_training_job,
+    delete_training_job,
+    process_queue,
+    submit_training_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +68,7 @@ def _find_model_in_catalog(model_id: str) -> dict | None:
 )
 async def trigger_fine_tune(
     body: FineTuneCreateRequest,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> FineTuneCreateResponse:
@@ -148,12 +155,55 @@ async def trigger_fine_tune(
         queue_position,
     )
 
+    # Commit the job BEFORE scheduling the background task so that the
+    # background task's separate DB session can see the new row.
+    # Without this, BackgroundTasks runs before get_db's post-yield commit,
+    # causing a "Job not found" error in the background task.
+    await db.commit()
+
+    # Submit job for processing in the background (non-blocking)
+    background_tasks.add_task(_submit_job_background, job.id)
+
     return FineTuneCreateResponse(
         job_id=job.id,
         status=job.status,
         queue_position=queue_position,
         estimated_cost=estimated_cost,
     )
+
+
+async def _submit_job_background(job_id: str) -> None:
+    """Background task wrapper to submit a training job with its own DB session.
+
+    If submission fails for any reason (Modal not configured, S3 error, etc.),
+    the job is transitioned to 'failed' with a descriptive error message so
+    the user sees the failure in the UI instead of the job being stuck in
+    'queued' indefinitely.
+
+    Uses ``process_queue`` to enforce the single-running-job invariant: if
+    another job is already training/evaluating, this call is a no-op and the
+    queue worker will pick it up later.
+    """
+    from app.dependencies import get_db_context
+
+    try:
+        async with get_db_context() as db:
+            job = await process_queue(db)
+            if job is None:
+                return
+            await submit_training_job(db, job.id)
+    except Exception as exc:
+        logger.exception("Background job submission failed for %s", job_id)
+        # Transition the job to 'failed' so the user sees the error
+        try:
+            async with get_db_context() as db:
+                from app.services.training_service import fail_job
+
+                await fail_job(db, job_id, str(exc)[:2000])
+        except Exception as inner_exc:
+            logger.exception(
+                "Failed to mark job %s as failed: %s", job_id, inner_exc
+            )
 
 
 @router.get(
@@ -203,6 +253,175 @@ async def list_fine_tune_history(
     )
     jobs = result.scalars().all()
     return FineTuneHistoryResponse(jobs=[FineTuneStatusResponse.model_validate(j) for j in jobs])
+
+
+# ── Retry stuck jobs ─────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{job_id}/retry",
+    response_model=FineTuneStatusResponse,
+    summary="Retry a failed or stuck queued fine-tuning job",
+)
+async def retry_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> FineTuneStatusResponse:
+    """
+    Retry a failed job or a job that is stuck in 'queued' status.
+
+    The job is reset to 'queued' and resubmitted in the background.
+    Only jobs in 'failed', 'cancelled', or 'queued' status can be retried.
+    """
+    result = await db.execute(
+        select(FineTuningJob).where(
+            FineTuningJob.id == job_id,
+            FineTuningJob.user_id == user.user_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Fine-tuning job '{job_id}' not found",
+        )
+
+    retryable_statuses = {"failed", "cancelled", "queued"}
+    if job.status not in retryable_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Job '{job_id}' is in status '{job.status}' and cannot be retried. "
+            f"Only {', '.join(sorted(retryable_statuses))} jobs can be retried.",
+        )
+
+    # Reset job to queued and clear previous error
+    job.status = "queued"
+    job.error_message = None
+    job.modal_function_id = None
+    job.started_at = None
+    job.completed_at = None
+    await db.flush()
+
+    # Resubmit in the background
+    background_tasks.add_task(_submit_job_background, job.id)
+
+    return FineTuneStatusResponse.model_validate(job)
+
+
+# ── Queue Management ───────────────────────────────────────────────────────
+
+
+@router.post(
+    "/queue/process",
+    summary="Trigger queue processing for pending jobs",
+)
+async def process_queue_endpoint(
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Manually trigger queue processing.
+
+    Picks up the next queued job (FIFO) and submits it for training.
+    This is useful when a job is stuck in 'queued' due to a previous
+    background task failure.
+    """
+    next_job = await process_queue(db)
+    if not next_job:
+        return {"message": "No queued jobs to process", "job_id": None}
+
+    # Submit the dequeued job in the background
+    background_tasks.add_task(_submit_job_background, next_job.id)
+
+    return {
+        "message": "Queue processing triggered",
+        "job_id": next_job.id,
+        "model_id": next_job.model_id,
+    }
+
+
+# ── Cancel / Delete ─────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{job_id}/cancel",
+    response_model=FineTuneStatusResponse,
+    summary="Cancel an active fine-tuning job",
+)
+async def cancel_job(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> FineTuneStatusResponse:
+    """
+    Cancel an active job (queued, training, or evaluating).
+
+    The job is transitioned to 'cancelled' status.
+    If the job is running on Modal, the function call is stopped.
+    """
+    result = await db.execute(
+        select(FineTuningJob).where(
+            FineTuningJob.id == job_id,
+            FineTuningJob.user_id == user.user_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Fine-tuning job '{job_id}' not found",
+        )
+
+    try:
+        await cancel_training_job(db, job)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return FineTuneStatusResponse.model_validate(job)
+
+
+@router.delete(
+    "/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a fine-tuning job",
+)
+async def delete_job(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Permanently delete a job from the history.
+
+    Only completed, failed, or cancelled jobs can be deleted.
+    Active jobs (queued, training, evaluating) must be cancelled first.
+    """
+    result = await db.execute(
+        select(FineTuningJob).where(
+            FineTuningJob.id == job_id,
+            FineTuningJob.user_id == user.user_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Fine-tuning job '{job_id}' not found",
+        )
+
+    try:
+        await delete_training_job(db, job)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 # ── Cost Estimation ──────────────────────────────────────────────────────

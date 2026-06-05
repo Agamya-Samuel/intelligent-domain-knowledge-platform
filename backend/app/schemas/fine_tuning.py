@@ -14,6 +14,7 @@ class FineTuneStatus(StrEnum):
     EVALUATING = "evaluating"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 # ── Request Schemas ─────────────────────────────────────────────────
