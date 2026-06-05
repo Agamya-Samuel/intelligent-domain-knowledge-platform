@@ -26,7 +26,7 @@ from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.services.rag.citation_extractor import extract_citations as extract_post_citations
 from app.services.rag.context_assembler import SYSTEM_PROMPT, assemble_context
-from app.services.rag.llm_client import generate_stream
+from app.services.rag.llm_client import generate_stream, resolve_model_name
 from app.services.rag.retriever import retrieve
 
 logger = logging.getLogger(__name__)
@@ -231,9 +231,11 @@ async def stream_chat(
 
         # Step 6: Stream LLM response with assembled prompt
         full_response = ""
+        resolved_model = resolve_model_name(model_variant)
         async for token in generate_stream(
             assembled.prompt,
             system_prompt=SYSTEM_PROMPT,
+            model=resolved_model,
         ):
             full_response += token
             yield ("token", {"content": token, "citations": None})

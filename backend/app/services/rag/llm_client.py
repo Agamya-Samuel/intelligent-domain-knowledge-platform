@@ -42,6 +42,13 @@ def _get_client() -> AsyncOpenAI:
     )
 
 
+def resolve_model_name(model_variant: str | None = None) -> str:
+    """Resolve a model variant ('base' / 'finetuned') to the vLLM model/adapter name."""
+    if model_variant == "finetuned" and settings.LLM_FINETUNED_ADAPTER:
+        return settings.LLM_FINETUNED_ADAPTER
+    return settings.LLM_MODEL
+
+
 async def generate(
     prompt: str,
     *,

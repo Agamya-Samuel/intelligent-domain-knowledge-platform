@@ -93,7 +93,14 @@ async def get_budget_summary(db: AsyncSession) -> dict:
         )
     )
     avg_cost = avg_cost_result.scalar_one()
-    estimated_runs_left = int(remaining / avg_cost) if avg_cost and avg_cost > 0 else 0
+    
+    # Fallback: if no completed runs, use cheapest model cost from catalog
+    if not avg_cost or avg_cost <= 0:
+        from app.config import MODEL_CATALOG
+        cheapest_cost = min((m["est_cost"] for m in MODEL_CATALOG if m.get("available")), default=None)
+        avg_cost = cheapest_cost if cheapest_cost else 5.0  # Default to $5 if catalog empty
+    
+    estimated_runs_left = int(remaining / avg_cost) if avg_cost > 0 else 0
 
     # Period boundaries
     period_start = datetime(now.year, now.month, 1, tzinfo=UTC)
