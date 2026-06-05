@@ -11,6 +11,7 @@ import {
   Scale,
   BarChart3,
   Settings,
+  ListChecks,
 } from "lucide-react";
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/datasets", label: "Datasets", icon: FolderOpen },
   { href: "/models", label: "Models", icon: Bot },
   { href: "/fine-tune", label: "Fine-tune", icon: Wrench },
+  { href: "/jobs", label: "Jobs", icon: ListChecks },
   { href: "/compare", label: "Compare", icon: Scale },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
