@@ -55,18 +55,26 @@ export async function fetchWithAuth(
     headers["Content-Type"] = "application/json";
   }
 
+  // Add session cookie as Bearer token for the backend proxy
+  const sessionToken = getSessionToken();
+  if (sessionToken) {
+    headers["Authorization"] = `Bearer ${sessionToken}`;
+  }
+
   // Add CSRF token for state-changing requests
   const method = (options.method || "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
-    const token = getSessionToken();
-    if (token) {
-      headers["X-CSRF-Token"] = token;
+    if (sessionToken) {
+      headers["X-CSRF-Token"] = sessionToken;
     }
   }
 
-  const fullUrl = url.startsWith("http") ? url : `${getApiUrl()}${url}`;
+  // Use relative URLs so requests go through the Next.js rewrite proxy (same-origin).
+  // The proxy forwards /api/v1/* to the backend, avoiding CORS and network issues.
+  // Absolute URLs (e.g. WebSocket endpoints) are passed through as-is.
+  const fetchUrl = url;
 
-  return fetch(fullUrl, {
+  return fetch(fetchUrl, {
     ...options,
     headers,
     credentials: "include",

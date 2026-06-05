@@ -35,6 +35,9 @@ export const config = {
     "/chat/:path*",
     "/datasets/:path*",
     "/models/:path*",
+    "/analytics/:path*",
+    "/jobs/:path*",
+    "/knowledge/:path*",
     "/login",
     // Protect root
     "/",
