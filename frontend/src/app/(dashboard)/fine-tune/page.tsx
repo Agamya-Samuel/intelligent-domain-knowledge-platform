@@ -103,7 +103,7 @@ export default function FineTunePage() {
       }
       if (datasetsRes.ok) {
         const d = await datasetsRes.json();
-        setDatasets(d.datasets.filter((ds: DatasetInfo) => ds.status === "active"));
+        setDatasets(Array.isArray(d) ? d.filter((ds: DatasetInfo) => ds.status === "active") : []);
       }
     } catch (err) {
       console.error("Failed to load models/datasets:", err);

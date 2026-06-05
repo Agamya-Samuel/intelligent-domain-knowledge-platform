@@ -105,15 +105,22 @@ export default function AnalyticsPage() {
   const { data: session, status } = useSession();
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await fetchWithAuth("/api/v1/analytics/overview");
       if (res.ok) {
         setOverview(await res.json());
+      } else {
+        const body = await res.json().catch(() => null);
+        setError(body?.detail || `Request failed (${res.status})`);
       }
     } catch (err) {
       console.error("Failed to fetch analytics:", err);
+      setError((err as Error).message || "Network error — is the backend running?");
     } finally {
       setLoading(false);
     }
@@ -144,6 +151,27 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent className="text-center text-sm text-muted-foreground">
             Please sign in to view analytics.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center p-6">
+        <Card className="w-full max-w-md border-destructive">
+          <CardHeader>
+            <CardTitle className="text-center">Failed to load analytics</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-3">
+            <p className="text-center text-sm text-muted-foreground">{error}</p>
+            <button
+              onClick={fetchData}
+              className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+            >
+              Retry
+            </button>
           </CardContent>
         </Card>
       </div>
