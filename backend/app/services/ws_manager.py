@@ -30,8 +30,7 @@ class ConnectionManager:
         self._lock = asyncio.Lock()
 
     async def connect(self, job_id: str, ws: WebSocket) -> None:
-        """Accept a WebSocket connection and register it for the given job."""
-        await ws.accept()
+        """Register an already-accepted WebSocket connection for the given job."""
         async with self._lock:
             self._connections[job_id].append(ws)
         logger.info("WS connected: job=%s (total=%d)", job_id, len(self._connections[job_id]))

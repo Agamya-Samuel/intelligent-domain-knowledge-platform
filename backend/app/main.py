@@ -5,6 +5,7 @@ Run locally:
     uvicorn app.main:app --reload --port 8000
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -57,13 +58,96 @@ def _setup_observability() -> None:
         logger.info("OpenTelemetry packages not installed — skipping tracing")
 
 
+# ── Queue background worker ────────────────────────────────────────────────
+
+_QUEUE_POLL_INTERVAL = 30  # seconds between queue checks
+_MODAL_POLL_INTERVAL = 15  # seconds between Modal completion checks
+_queue_worker_task: asyncio.Task | None = None
+_modal_poller_task: asyncio.Task | None = None
+
+
+async def _queue_worker() -> None:
+    """
+    Background task that periodically polls the training queue.
+
+    Every ``_QUEUE_POLL_INTERVAL`` seconds, checks if there is a queued
+    fine-tuning job with no active job running.  If so, submits it.
+    This ensures jobs are picked up even if the original background task
+    from the API endpoint failed silently.
+    """
+    from app.dependencies import get_db_context
+    from app.services.training_service import process_queue, submit_training_job
+
+    logger.info("Queue worker started (poll interval=%ds)", _QUEUE_POLL_INTERVAL)
+    while True:
+        try:
+            await asyncio.sleep(_QUEUE_POLL_INTERVAL)
+            async with get_db_context() as db:
+                job = await process_queue(db)
+                if job:
+                    logger.info("Queue worker: submitting job %s", job.id)
+                    await submit_training_job(db, job.id)
+        except asyncio.CancelledError:
+            logger.info("Queue worker cancelled — shutting down")
+            break
+        except Exception:
+            logger.exception("Queue worker error")
+
+
+async def _modal_job_poller() -> None:
+    """
+    Background task that polls Modal for training job completion.
+
+    Every ``_MODAL_POLL_INTERVAL`` seconds, checks all jobs in
+    ``training``/``evaluating`` status to see if their Modal function
+    has returned.  Completed jobs are finalized; failed jobs are marked.
+    """
+    from app.dependencies import get_db_context
+    from app.services.training_service import poll_modal_jobs
+
+    logger.info("Modal job poller started (poll interval=%ds)", _MODAL_POLL_INTERVAL)
+    while True:
+        try:
+            await asyncio.sleep(_MODAL_POLL_INTERVAL)
+            async with get_db_context() as db:
+                completed = await poll_modal_jobs(db)
+                if completed:
+                    logger.info("Modal poller: resolved jobs %s", completed)
+        except asyncio.CancelledError:
+            logger.info("Modal job poller cancelled — shutting down")
+            break
+        except Exception:
+            logger.exception("Modal job poller error")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application startup/shutdown lifecycle hook."""
-    # Startup: configure observability
+    global _queue_worker_task, _modal_poller_task
+
     _setup_observability()
+
+    _queue_worker_task = asyncio.create_task(_queue_worker())
+    _modal_poller_task = asyncio.create_task(_modal_job_poller())
+    logger.info("Started training queue worker + Modal job poller")
+
     yield
-    # Shutdown: cleanup resources
+
+    if _queue_worker_task:
+        _queue_worker_task.cancel()
+        try:
+            await _queue_worker_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Queue worker stopped")
+
+    if _modal_poller_task:
+        _modal_poller_task.cancel()
+        try:
+            await _modal_poller_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Modal job poller stopped")
 
 
 app = FastAPI(
