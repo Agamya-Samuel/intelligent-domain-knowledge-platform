@@ -38,7 +38,7 @@ MODEL_DIR = "/models"
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "vllm>=0.6.6.post1",
+        "vllm==0.7.3",
         "torch>=2.4.1",
         "sentence-transformers>=3.3.1",
         "FlagEmbedding>=1.3.2",
@@ -58,40 +58,37 @@ gpu_image = (
     secrets=[modal.Secret.from_name("idkp-secrets")],
 )
 @modal.concurrent(max_inputs=100)
-@modal.asgi_app()
+@modal.web_server(port=8000)
 def inference():
     """
     vLLM inference server with LoRA hot-swap.
 
-    Serves an OpenAI-compatible API for text generation.
-    Supports loading LoRA adapters from the Modal Volume at
+    Serves via vllm serve CLI subprocess (OpenAI-compatible API).
+    Supports loading LoRA adapters from Modal Volume at
     /models/adapters/latest (symlink to the most recent fine-tuning job).
 
     GPU: NVIDIA A10G (24GB) — supports up to 14B models.
     Scale: 0 (cold start) to 4 concurrent containers.
     """
+    import os
     import subprocess
 
-    from vllm.entrypoints.openai.api_server import app as vllm_app
+    os.environ["VLLM_ALLOW_RUNTIME_LORA_UPDATING"] = "1"
 
     model_name = "Qwen/Qwen2.5-7B-Instruct"
     model_path = f"{MODEL_DIR}/{model_name.replace('/', '-')}"
 
-    # Use local checkpoint if available, otherwise download
     if Path(model_path).exists():
         model_name = model_path
 
-    # Ensure the adapters symlink exists (points to latest fine-tuning job)
     adapters_dir = Path(f"{MODEL_DIR}/adapters")
     adapters_dir.mkdir(parents=True, exist_ok=True)
     latest_link = adapters_dir / "latest"
     if not latest_link.exists():
-        # Find the most recent adapter directory
         adapters = sorted([d for d in adapters_dir.iterdir() if d.is_dir() and d.name != "latest"])
         if adapters:
             latest_link.symlink_to(adapters[-1])
 
-    # vLLM configuration optimized for A10G
     engine_args = [
         "--host", "0.0.0.0",
         "--port", "8000",
@@ -105,8 +102,6 @@ def inference():
     ]
 
     subprocess.Popen(["vllm", "serve"] + engine_args)
-
-    return vllm_app
 
 
 # ─────────────────────────────────────────────────────────────────────────
