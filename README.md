@@ -18,6 +18,8 @@ A production-grade, AI question-answering system combining **domain-specific fin
   - [Infrastructure Design](#infrastructure-design)
   - [RAG Pipeline Design](#rag-pipeline-design)
   - [Fine-Tuning Architecture Design](#fine-tuning-architecture-design)
+  - [PlantUML Sequence Diagram](#plantuml-sequence-diagram---idkp-advanced-rag-chat-workflow)
+  - [PlantUML Activity Diagram](#plantuml-activity-diagram---idkp-system-activity-flow)
 - [Features](#features)
 - [Technology Stack](#technology-stack)
 - [Prerequisites](#prerequisites)
@@ -541,7 +543,7 @@ graph TB
     QLRA["QLoRA Training: Unsloth + PEFT rank=64 alpha=128 4-bit"]
     PEVA["Auto RAGAS Evaluation: LLM-as-judge all 4 metrics"]
     LOAD --> QLRA --> PEVA
-  end
+    end
 
   MFT --> LOAD
   QLRA -->|"Epoch checkpoints saved"| S3C["S3: checkpoints/job_id/"]
@@ -552,13 +554,24 @@ graph TB
   PGDB --> BTR["BudgetTracking: record GPU spend for calendar month"]
 ```
 
+### PlantUML Sequence Diagram - IDKP Advanced RAG Chat Workflow
+
+This PlantUML sequence diagram shows the detailed message flow between participants during a RAG chat interaction, including authentication, rate limiting, query expansion, retrieval, and response streaming.
+
+![Sequence Diagram](docs/diagrams/sequence-diagram.svg)
+
+### PlantUML Activity Diagram - IDKP System Activity Flow
+
+This PlantUML activity diagram illustrates the overall system workflow including document ingestion, RAG querying, and fine-tuning processes.
+
+![Activity Diagram](docs/diagrams/activity-diagram.svg)
+
 ---
 
 ## Features
 
 - **Hybrid Fine-tuning + RAG Architecture** — Domain adaptation via QLoRA fine-tuning combined with real-time knowledge retrieval
 - **Multi-format Document Ingestion** — Unified conversion via MarkItDown supporting 11+ formats
-- **Advanced RAG Pipeline** — 9 components including hybrid retrieval, cross-encoder reranking, query expansion, and citation extraction
 - **Model Comparison System** — Toggle between base and fine-tuned models with automated comparative evaluation
 - **Versioned Dataset Management** — Create, version, and manage training datasets without data loss
 - **Budget-aware Fine-tuning** — $30/month GPU budget via Modal.com serverless infrastructure
